@@ -1,0 +1,16 @@
+{
+    "name": "jostkleigrewe/lib-php-eurip-sso",
+    "description": "Shared contracts for EURIP SSO + AI projects (DTOs, exceptions, interfaces)",
+    "type": "library",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Jostkleigrewe\\Sso\\": "src/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
