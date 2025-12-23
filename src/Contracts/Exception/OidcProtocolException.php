@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Jostkleigrewe\Sso\Contracts\Exception;
 
 /**
- * DE: Fehler für Protokoll-/Validierungsprobleme im OAuth2/OIDC Flow.
- * EN: Error for protocol/validation issues in OAuth2/OIDC flow.
+ * DE: Protokoll- oder Validierungsfehler im OAuth2/OIDC Flow.
+ * EN: Protocol or validation error in the OAuth2/OIDC flow.
  */
 final class OidcProtocolException extends \RuntimeException
 {
