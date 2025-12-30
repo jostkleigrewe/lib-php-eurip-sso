@@ -50,5 +50,7 @@ final class OidcClientConfig
          * EN: Redirect URI (callback) for authorization code.
          */
         public readonly string $redirectUri,
+
+        public readonly string $userInfoEndpoint,
     ) {}
 }
