@@ -21,26 +21,34 @@ final class OidcClientConfig
         public readonly string $clientId,
 
         /**
+         * (public)
+         */
+        public readonly string $issuer,
+
+        /**
+         * (public)
          * DE: Authorization Endpoint (z.B. /authorize).
          * EN: Authorization endpoint (e.g. /authorize).
          */
         public readonly string $authorizationEndpoint,
 
         /**
+         * (internal)
          * DE: Token Endpoint (z.B. /token).
          * EN: Token endpoint (e.g. /token).
          */
         public readonly string $tokenEndpoint,
 
         /**
+         * (internal)
+         */
+        public readonly string $jwksUri,
+
+        /**
+         * (public)
          * DE: Redirect URI (Callback) für Authorization Code.
          * EN: Redirect URI (callback) for authorization code.
          */
         public readonly string $redirectUri,
-
-        public readonly string $jwksUri,
-
-
-        public readonly ?string $issuer = null,
     ) {}
 }
