@@ -16,5 +16,6 @@ final class TokenResponse
         public readonly ?string $refreshToken,
         public readonly int $expiresIn,
         public readonly string $tokenType,
-    ) {}
+    ) {
+    }
 }

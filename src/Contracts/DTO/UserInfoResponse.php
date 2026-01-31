@@ -31,5 +31,6 @@ final class UserInfoResponse
          * EN: Display name (optional).
          */
         public readonly ?string $name = null,
-    ) {}
+    ) {
+    }
 }

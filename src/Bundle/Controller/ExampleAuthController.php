@@ -147,7 +147,6 @@ class ExampleAuthController extends AbstractController
             $session->remove('_auth_return_url');
 
             return $this->redirect($returnUrl);
-
         } catch (TokenExchangeFailedException $e) {
             $this->addFlash('error', 'Login fehlgeschlagen: ' . $e->errorDescription);
 

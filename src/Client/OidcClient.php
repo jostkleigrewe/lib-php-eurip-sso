@@ -6,12 +6,15 @@ namespace Jostkleigrewe\Sso\Client;
 
 use Jostkleigrewe\Sso\Contracts\DTO\TokenResponse;
 use Jostkleigrewe\Sso\Contracts\DTO\UserInfoResponse;
+use Jostkleigrewe\Sso\Contracts\Exception\ClaimsValidationException;
 use Jostkleigrewe\Sso\Contracts\Exception\OidcProtocolException;
 use Jostkleigrewe\Sso\Contracts\Exception\TokenExchangeFailedException;
 use Jostkleigrewe\Sso\Contracts\Oidc\OidcClientConfig;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * DE: OIDC Client für Authorization Code Flow mit PKCE.
@@ -19,13 +22,30 @@ use Psr\Http\Message\StreamFactoryInterface;
  */
 final class OidcClient
 {
+    private const CLOCK_SKEW_SECONDS = 60;
+
+    /** @var array<string, mixed>|null */
+    private ?array $jwksCache = null;
+
+    private LoggerInterface $logger;
+
     public function __construct(
         private readonly OidcClientConfig $config,
         private readonly ClientInterface $httpClient,
         private readonly RequestFactoryInterface $requestFactory,
         private readonly StreamFactoryInterface $streamFactory,
-        private readonly ?string $clientSecret = null,
+        ?LoggerInterface $logger = null,
     ) {
+        $this->logger = $logger ?? new NullLogger();
+    }
+
+    /**
+     * DE: Gibt die Client-Konfiguration zurück.
+     * EN: Returns the client configuration.
+     */
+    public function getConfig(): OidcClientConfig
+    {
+        return $this->config;
     }
 
     /**
@@ -55,12 +75,46 @@ final class OidcClient
 
         $url = $this->config->authorizationEndpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 
+        $this->logger->debug('Built authorization URL', [
+            'client_id' => $this->config->clientId,
+            'scopes' => $scopes,
+        ]);
+
         return [
             'url' => $url,
             'state' => $state,
             'nonce' => $nonce,
             'code_verifier' => $codeVerifier,
         ];
+    }
+
+    /**
+     * DE: Erstellt die Logout-URL für SSO-Logout.
+     * EN: Creates the logout URL for SSO logout.
+     *
+     * @throws OidcProtocolException wenn kein end_session_endpoint konfiguriert ist
+     */
+    public function buildLogoutUrl(?string $postLogoutRedirectUri = null, ?string $idTokenHint = null): string
+    {
+        if ($this->config->endSessionEndpoint === null) {
+            throw new OidcProtocolException('No end_session_endpoint configured');
+        }
+
+        $params = [];
+
+        if ($postLogoutRedirectUri !== null) {
+            $params['post_logout_redirect_uri'] = $postLogoutRedirectUri;
+        }
+
+        if ($idTokenHint !== null) {
+            $params['id_token_hint'] = $idTokenHint;
+        }
+
+        if ($params === []) {
+            return $this->config->endSessionEndpoint;
+        }
+
+        return $this->config->endSessionEndpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
     }
 
     /**
@@ -71,6 +125,8 @@ final class OidcClient
      */
     public function exchangeCode(string $code, string $codeVerifier): TokenResponse
     {
+        $this->logger->debug('Exchanging authorization code for tokens');
+
         $params = [
             'grant_type' => 'authorization_code',
             'code' => $code,
@@ -79,18 +135,25 @@ final class OidcClient
             'code_verifier' => $codeVerifier,
         ];
 
-        if ($this->clientSecret !== null) {
-            $params['client_secret'] = $this->clientSecret;
+        if ($this->config->clientSecret !== null) {
+            $params['client_secret'] = $this->config->clientSecret;
         }
 
         $response = $this->postForm($this->config->tokenEndpoint, $params);
 
         if (!isset($response['access_token'])) {
-            throw new TokenExchangeFailedException(
-                $response['error'] ?? 'unknown_error',
-                $response['error_description'] ?? 'Token exchange failed'
-            );
+            $error = $response['error'] ?? 'unknown_error';
+            $description = $response['error_description'] ?? 'Token exchange failed';
+
+            $this->logger->error('Token exchange failed', [
+                'error' => $error,
+                'error_description' => $description,
+            ]);
+
+            throw new TokenExchangeFailedException($error, $description);
         }
+
+        $this->logger->info('Token exchange successful');
 
         return new TokenResponse(
             accessToken: $response['access_token'],
@@ -109,24 +172,33 @@ final class OidcClient
      */
     public function refreshToken(string $refreshToken): TokenResponse
     {
+        $this->logger->debug('Refreshing tokens');
+
         $params = [
             'grant_type' => 'refresh_token',
             'refresh_token' => $refreshToken,
             'client_id' => $this->config->clientId,
         ];
 
-        if ($this->clientSecret !== null) {
-            $params['client_secret'] = $this->clientSecret;
+        if ($this->config->clientSecret !== null) {
+            $params['client_secret'] = $this->config->clientSecret;
         }
 
         $response = $this->postForm($this->config->tokenEndpoint, $params);
 
         if (!isset($response['access_token'])) {
-            throw new TokenExchangeFailedException(
-                $response['error'] ?? 'unknown_error',
-                $response['error_description'] ?? 'Token refresh failed'
-            );
+            $error = $response['error'] ?? 'unknown_error';
+            $description = $response['error_description'] ?? 'Token refresh failed';
+
+            $this->logger->error('Token refresh failed', [
+                'error' => $error,
+                'error_description' => $description,
+            ]);
+
+            throw new TokenExchangeFailedException($error, $description);
         }
+
+        $this->logger->info('Token refresh successful');
 
         return new TokenResponse(
             accessToken: $response['access_token'],
@@ -145,6 +217,8 @@ final class OidcClient
      */
     public function getUserInfo(string $accessToken): UserInfoResponse
     {
+        $this->logger->debug('Fetching user info');
+
         $request = $this->requestFactory->createRequest('GET', $this->config->userInfoEndpoint)
             ->withHeader('Authorization', 'Bearer ' . $accessToken)
             ->withHeader('Accept', 'application/json');
@@ -152,6 +226,9 @@ final class OidcClient
         $response = $this->httpClient->sendRequest($request);
 
         if ($response->getStatusCode() !== 200) {
+            $this->logger->error('UserInfo request failed', [
+                'status_code' => $response->getStatusCode(),
+            ]);
             throw new OidcProtocolException('UserInfo request failed: ' . $response->getStatusCode());
         }
 
@@ -161,6 +238,8 @@ final class OidcClient
             throw new OidcProtocolException('Invalid UserInfo response');
         }
 
+        $this->logger->debug('UserInfo fetched successfully', ['sub' => $data['sub']]);
+
         return new UserInfoResponse(
             sub: $data['sub'],
             email: $data['email'] ?? null,
@@ -169,74 +248,243 @@ final class OidcClient
     }
 
     /**
-     * DE: Dekodiert ID Token Payload (ohne Signaturprüfung).
-     * EN: Decodes ID token payload (without signature verification).
+     * DE: Dekodiert und validiert ID Token.
+     * EN: Decodes and validates ID token.
      *
+     * @param bool $verifySignature Wenn true, wird die Signatur via JWKS validiert
+     * @param bool $validateClaims Wenn true, werden iss, aud, exp, iat validiert
+     * @param string|null $expectedNonce Erwarteter Nonce-Wert (optional)
      * @return array<string, mixed>
      * @throws OidcProtocolException
+     * @throws ClaimsValidationException
      */
-    public function decodeIdToken(string $idToken): array
-    {
+    public function decodeIdToken(
+        string $idToken,
+        bool $verifySignature = false,
+        bool $validateClaims = true,
+        ?string $expectedNonce = null,
+    ): array {
         $parts = explode('.', $idToken);
         if (count($parts) !== 3) {
             throw new OidcProtocolException('Invalid ID token format');
         }
 
-        $payload = json_decode($this->base64UrlDecode($parts[1]), true);
+        [$headerB64, $payloadB64, $signatureB64] = $parts;
 
-        if (!is_array($payload)) {
+        $header = json_decode($this->base64UrlDecode($headerB64), true);
+        $payload = json_decode($this->base64UrlDecode($payloadB64), true);
+
+        if (!is_array($header) || !is_array($payload)) {
             throw new OidcProtocolException('Invalid ID token payload');
+        }
+
+        if ($verifySignature) {
+            $this->verifySignature($headerB64 . '.' . $payloadB64, $signatureB64, $header);
+            $this->logger->debug('ID token signature verified');
+        }
+
+        if ($validateClaims) {
+            $this->validateClaims($payload, $expectedNonce);
+            $this->logger->debug('ID token claims validated');
         }
 
         return $payload;
     }
 
     /**
-     * DE: Erstellt Client aus Discovery Document.
-     * EN: Creates client from discovery document.
+     * DE: Validiert die Claims eines ID Tokens.
+     * EN: Validates the claims of an ID token.
      *
-     * @throws OidcProtocolException
+     * @param array<string, mixed> $claims
+     * @throws ClaimsValidationException
      */
-    public static function fromDiscovery(
-        string $issuer,
-        string $clientId,
-        string $redirectUri,
-        ClientInterface $httpClient,
-        RequestFactoryInterface $requestFactory,
-        StreamFactoryInterface $streamFactory,
-        ?string $clientSecret = null,
-    ): self {
-        $discoveryUrl = rtrim($issuer, '/') . '/.well-known/openid-configuration';
+    public function validateClaims(array $claims, ?string $expectedNonce = null): void
+    {
+        $now = time();
 
-        $request = $requestFactory->createRequest('GET', $discoveryUrl)
-            ->withHeader('Accept', 'application/json');
-
-        $response = $httpClient->sendRequest($request);
-
-        if ($response->getStatusCode() !== 200) {
-            throw new OidcProtocolException('Discovery request failed: ' . $response->getStatusCode());
+        // Validate issuer - accept both internal and public issuer
+        $iss = $claims['iss'] ?? null;
+        $validIssuers = [$this->config->issuer];
+        if ($this->config->publicIssuer !== null) {
+            $validIssuers[] = $this->config->publicIssuer;
         }
 
-        $discovery = json_decode((string) $response->getBody(), true);
-
-        if (!is_array($discovery)) {
-            throw new OidcProtocolException('Invalid discovery document');
+        if ($iss === null || !in_array($iss, $validIssuers, true)) {
+            throw ClaimsValidationException::invalidIssuer(
+                expected: implode(' or ', $validIssuers),
+                actual: $iss ?? 'null',
+            );
         }
 
-        $config = new OidcClientConfig(
-            clientId: $clientId,
-            issuer: $discovery['issuer'] ?? $issuer,
-            authorizationEndpoint: $discovery['authorization_endpoint'] ?? '',
-            tokenEndpoint: $discovery['token_endpoint'] ?? '',
-            jwksUri: $discovery['jwks_uri'] ?? '',
-            redirectUri: $redirectUri,
-            userInfoEndpoint: $discovery['userinfo_endpoint'] ?? '',
-        );
+        // Validate audience
+        $aud = $claims['aud'] ?? null;
+        $validAud = is_array($aud)
+            ? in_array($this->config->clientId, $aud, true)
+            : $aud === $this->config->clientId;
 
-        return new self($config, $httpClient, $requestFactory, $streamFactory, $clientSecret);
+        if (!$validAud) {
+            throw ClaimsValidationException::invalidAudience($this->config->clientId, $aud);
+        }
+
+        // Validate expiration (with clock skew tolerance)
+        $exp = $claims['exp'] ?? null;
+        if ($exp !== null && $exp < ($now - self::CLOCK_SKEW_SECONDS)) {
+            throw ClaimsValidationException::tokenExpired((int) $exp, $now);
+        }
+
+        // Validate issued at (with clock skew tolerance)
+        $iat = $claims['iat'] ?? null;
+        if ($iat !== null && $iat > ($now + self::CLOCK_SKEW_SECONDS)) {
+            throw ClaimsValidationException::tokenNotYetValid((int) $iat, $now);
+        }
+
+        // Validate nonce if expected
+        if ($expectedNonce !== null) {
+            $nonce = $claims['nonce'] ?? null;
+            if ($nonce !== $expectedNonce) {
+                throw ClaimsValidationException::invalidNonce($expectedNonce, $nonce);
+            }
+        }
     }
 
     /**
+     * DE: Validiert die Signatur eines ID Tokens.
+     * EN: Validates the signature of an ID token.
+     *
+     * @param array<string, mixed> $header
+     * @throws OidcProtocolException
+     */
+    private function verifySignature(string $data, string $signatureB64, array $header): void
+    {
+        $alg = $header['alg'] ?? null;
+        $kid = $header['kid'] ?? null;
+
+        if ($alg !== 'RS256') {
+            throw new OidcProtocolException('Unsupported algorithm: ' . ($alg ?? 'none'));
+        }
+
+        $jwks = $this->fetchJwks();
+        $key = $this->findKey($jwks, $kid);
+
+        if ($key === null) {
+            throw new OidcProtocolException('No matching key found in JWKS');
+        }
+
+        $publicKey = $this->jwkToPublicKey($key);
+        $signature = $this->base64UrlDecode($signatureB64);
+
+        $result = openssl_verify($data, $signature, $publicKey, OPENSSL_ALGO_SHA256);
+
+        if ($result !== 1) {
+            throw new OidcProtocolException('Invalid ID token signature');
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     * @throws OidcProtocolException
+     */
+    private function fetchJwks(): array
+    {
+        if ($this->jwksCache !== null) {
+            return $this->jwksCache;
+        }
+
+        $this->logger->debug('Fetching JWKS', ['uri' => $this->config->jwksUri]);
+
+        $request = $this->requestFactory->createRequest('GET', $this->config->jwksUri)
+            ->withHeader('Accept', 'application/json');
+
+        $response = $this->httpClient->sendRequest($request);
+
+        if ($response->getStatusCode() !== 200) {
+            throw new OidcProtocolException('JWKS request failed: ' . $response->getStatusCode());
+        }
+
+        $data = json_decode((string) $response->getBody(), true);
+
+        if (!is_array($data) || !isset($data['keys'])) {
+            throw new OidcProtocolException('Invalid JWKS response');
+        }
+
+        $this->jwksCache = $data;
+
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $jwks
+     * @return array<string, mixed>|null
+     */
+    private function findKey(array $jwks, ?string $kid): ?array
+    {
+        foreach ($jwks['keys'] as $key) {
+            if ($kid === null || ($key['kid'] ?? null) === $kid) {
+                if (($key['use'] ?? 'sig') === 'sig' && ($key['kty'] ?? null) === 'RSA') {
+                    return $key;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $jwk
+     * @throws OidcProtocolException
+     */
+    private function jwkToPublicKey(array $jwk): \OpenSSLAsymmetricKey
+    {
+        if (!isset($jwk['n'], $jwk['e'])) {
+            throw new OidcProtocolException('Invalid JWK: missing n or e');
+        }
+
+        $n = $this->base64UrlDecode($jwk['n']);
+        $e = $this->base64UrlDecode($jwk['e']);
+
+        // Build DER-encoded RSA public key
+        $modulus = $this->encodeInteger($n);
+        $exponent = $this->encodeInteger($e);
+
+        $rsaPublicKey = "\x30" . $this->encodeLength(strlen($modulus) + strlen($exponent)) . $modulus . $exponent;
+        $algorithmIdentifier = "\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00";
+        $bitString = "\x03" . $this->encodeLength(strlen($rsaPublicKey) + 1) . "\x00" . $rsaPublicKey;
+        $der = "\x30" . $this->encodeLength(strlen($algorithmIdentifier) + strlen($bitString)) . $algorithmIdentifier . $bitString;
+
+        $pem = "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END PUBLIC KEY-----";
+
+        $key = openssl_pkey_get_public($pem);
+
+        if ($key === false) {
+            throw new OidcProtocolException('Failed to parse public key from JWK');
+        }
+
+        return $key;
+    }
+
+    private function encodeInteger(string $data): string
+    {
+        // Add leading zero if high bit is set (to ensure positive integer)
+        if (ord($data[0]) > 0x7f) {
+            $data = "\x00" . $data;
+        }
+
+        return "\x02" . $this->encodeLength(strlen($data)) . $data;
+    }
+
+    private function encodeLength(int $length): string
+    {
+        if ($length < 0x80) {
+            return chr($length);
+        }
+
+        $temp = ltrim(pack('N', $length), "\x00");
+
+        return chr(0x80 | strlen($temp)) . $temp;
+    }
+
+    /**
+     * @param array<string, string> $params
      * @return array<string, mixed>
      */
     private function postForm(string $url, array $params): array
@@ -277,6 +525,7 @@ final class OidcClient
         if ($remainder) {
             $input .= str_repeat('=', 4 - $remainder);
         }
-        return base64_decode(strtr($input, '-_', '+/')) ?: '';
+
+        return base64_decode(strtr($input, '-_', '+/'), true) ?: '';
     }
 }

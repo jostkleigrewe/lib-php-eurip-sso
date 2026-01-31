@@ -37,10 +37,12 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
         private readonly array $scopes = ['openid', 'profile', 'email'],
         private readonly string $callbackRoute = '/auth/callback',
         private readonly string $defaultTargetPath = '/',
+        private readonly string $loginPath = '/login',
+        private readonly bool $verifySignature = false,
     ) {
     }
 
-    public function supports(Request $request): ?bool
+    public function supports(Request $request): bool
     {
         return $request->getPathInfo() === $this->callbackRoute
             && $request->query->has('code');
@@ -63,6 +65,8 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
             throw new AuthenticationException('Missing code verifier');
         }
 
+        $expectedNonce = $session->get(self::SESSION_NONCE);
+
         // Clear session data
         $session->remove(self::SESSION_STATE);
         $session->remove(self::SESSION_NONCE);
@@ -74,26 +78,28 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
             throw new AuthenticationException('Token exchange failed: ' . $e->error);
         }
 
-        // Get user identifier from ID token or UserInfo
-        $userId = $this->extractUserId($tokenResponse);
+        // Get user identifier and validate nonce from ID token
+        $userId = $this->extractUserId($tokenResponse, $expectedNonce);
 
         return new SelfValidatingPassport(
             new UserBadge($userId, fn (string $id) => $this->userProvider->loadOrCreateUser($id, $tokenResponse))
         );
     }
 
-    public function onAuthenticationSuccess(Request $request, TokenInterface $token, string $firewallName): ?Response
+    public function onAuthenticationSuccess(Request $request, TokenInterface $token, string $firewallName): Response
     {
         $targetPath = $request->getSession()->get('_security.' . $firewallName . '.target_path');
 
         return new RedirectResponse($targetPath ?? $this->defaultTargetPath);
     }
 
-    public function onAuthenticationFailure(Request $request, AuthenticationException $exception): ?Response
+    public function onAuthenticationFailure(Request $request, AuthenticationException $exception): Response
     {
-        $request->getSession()->getFlashBag()->add('error', $exception->getMessage());
+        /** @var \Symfony\Component\HttpFoundation\Session\Session $session */
+        $session = $request->getSession();
+        $session->getFlashBag()->add('error', $exception->getMessage());
 
-        return new RedirectResponse('/login');
+        return new RedirectResponse($this->loginPath);
     }
 
     public function start(Request $request, ?AuthenticationException $authException = null): Response
@@ -108,10 +114,16 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
         return new RedirectResponse($authData['url']);
     }
 
-    private function extractUserId(TokenResponse $tokenResponse): string
+    private function extractUserId(TokenResponse $tokenResponse, ?string $expectedNonce): string
     {
         if ($tokenResponse->idToken !== null) {
-            $claims = $this->oidcClient->decodeIdToken($tokenResponse->idToken);
+            $claims = $this->oidcClient->decodeIdToken($tokenResponse->idToken, $this->verifySignature);
+
+            // Validate nonce if present
+            if ($expectedNonce !== null && isset($claims['nonce']) && $claims['nonce'] !== $expectedNonce) {
+                throw new AuthenticationException('Invalid nonce in ID token');
+            }
+
             if (isset($claims['sub'])) {
                 return $claims['sub'];
             }
@@ -119,6 +131,7 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
 
         // Fallback: UserInfo endpoint
         $userInfo = $this->oidcClient->getUserInfo($tokenResponse->accessToken);
+
         return $userInfo->sub;
     }
 }
