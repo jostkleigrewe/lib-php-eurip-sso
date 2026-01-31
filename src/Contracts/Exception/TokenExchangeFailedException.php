@@ -10,4 +10,11 @@ namespace Jostkleigrewe\Sso\Contracts\Exception;
  */
 final class TokenExchangeFailedException extends \RuntimeException
 {
+    public function __construct(
+        public readonly string $error,
+        public readonly string $errorDescription,
+        ?\Throwable $previous = null,
+    ) {
+        parent::__construct("Token exchange failed: {$error} - {$errorDescription}", 0, $previous);
+    }
 }
