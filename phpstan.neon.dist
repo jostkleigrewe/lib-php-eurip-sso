@@ -3,4 +3,5 @@ parameters:
     paths:
         - src
     excludePaths:
-        - src/Resources
+        analyseAndScan:
+            - src/Resources (?)
