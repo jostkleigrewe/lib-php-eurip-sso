@@ -124,20 +124,36 @@ final class OidcClientFactory
             'issuer' => $discovery['issuer'] ?? $issuer,
         ]);
 
-        // Build authorization endpoint with public issuer if configured
+        // Get endpoints from discovery
         $authorizationEndpoint = $discovery['authorization_endpoint']
             ?? throw new OidcProtocolException('Missing authorization_endpoint');
+        $tokenEndpoint = $discovery['token_endpoint']
+            ?? throw new OidcProtocolException('Missing token_endpoint');
+        $jwksUri = $discovery['jwks_uri'] ?? '';
+        $userInfoEndpoint = $discovery['userinfo_endpoint'] ?? '';
         $endSessionEndpoint = $discovery['end_session_endpoint'] ?? null;
 
-        // Replace internal issuer with public issuer in browser-facing endpoints
+        // Handle dual-URL setup (internal issuer for server-to-server, public issuer for browser)
+        // Discovery document may contain public URLs, we need to:
+        // - Keep public URLs for browser-facing endpoints (authorization, end_session)
+        // - Use internal URLs for server-to-server endpoints (token, userinfo, jwks)
         if ($publicIssuer !== null) {
-            $internalIssuer = rtrim($discovery['issuer'] ?? $issuer, '/');
+            $internalIssuerNormalized = rtrim($issuer, '/');
             $publicIssuerNormalized = rtrim($publicIssuer, '/');
+            $discoveryIssuer = rtrim($discovery['issuer'] ?? $issuer, '/');
 
-            $authorizationEndpoint = str_replace($internalIssuer, $publicIssuerNormalized, $authorizationEndpoint);
-
-            if ($endSessionEndpoint !== null) {
-                $endSessionEndpoint = str_replace($internalIssuer, $publicIssuerNormalized, $endSessionEndpoint);
+            // If discovery issuer matches public issuer, replace with internal for server endpoints
+            if ($discoveryIssuer === $publicIssuerNormalized) {
+                $tokenEndpoint = str_replace($publicIssuerNormalized, $internalIssuerNormalized, $tokenEndpoint);
+                $userInfoEndpoint = str_replace($publicIssuerNormalized, $internalIssuerNormalized, $userInfoEndpoint);
+                $jwksUri = str_replace($publicIssuerNormalized, $internalIssuerNormalized, $jwksUri);
+            }
+            // If discovery issuer matches internal issuer, replace with public for browser endpoints
+            elseif ($discoveryIssuer === $internalIssuerNormalized) {
+                $authorizationEndpoint = str_replace($internalIssuerNormalized, $publicIssuerNormalized, $authorizationEndpoint);
+                if ($endSessionEndpoint !== null) {
+                    $endSessionEndpoint = str_replace($internalIssuerNormalized, $publicIssuerNormalized, $endSessionEndpoint);
+                }
             }
         }
 
@@ -145,10 +161,10 @@ final class OidcClientFactory
             clientId: $clientId,
             issuer: $discovery['issuer'] ?? $issuer,
             authorizationEndpoint: $authorizationEndpoint,
-            tokenEndpoint: $discovery['token_endpoint'] ?? throw new OidcProtocolException('Missing token_endpoint'),
-            jwksUri: $discovery['jwks_uri'] ?? '',
+            tokenEndpoint: $tokenEndpoint,
+            jwksUri: $jwksUri,
             redirectUri: $redirectUri,
-            userInfoEndpoint: $discovery['userinfo_endpoint'] ?? '',
+            userInfoEndpoint: $userInfoEndpoint,
             endSessionEndpoint: $endSessionEndpoint,
             clientSecret: $clientSecret,
             publicIssuer: $publicIssuer,

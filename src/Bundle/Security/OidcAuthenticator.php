@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Security;
 
+use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Jostkleigrewe\Sso\Contracts\DTO\TokenResponse;
 use Jostkleigrewe\Sso\Contracts\Exception\TokenExchangeFailedException;
@@ -24,21 +25,17 @@ use Symfony\Component\Security\Http\EntryPoint\AuthenticationEntryPointInterface
  */
 final class OidcAuthenticator extends AbstractAuthenticator implements AuthenticationEntryPointInterface
 {
-    private const SESSION_STATE = '_eurip_sso_state';
-    private const SESSION_NONCE = '_eurip_sso_nonce';
-    private const SESSION_VERIFIER = '_eurip_sso_verifier';
-
     /**
      * @param list<string> $scopes
      */
     public function __construct(
         private readonly OidcClient $oidcClient,
         private readonly OidcUserProviderInterface $userProvider,
-        private readonly array $scopes = ['openid', 'profile', 'email'],
+        private readonly array $scopes = OidcConstants::DEFAULT_SCOPES,
         private readonly string $callbackRoute = '/auth/callback',
         private readonly string $defaultTargetPath = '/',
         private readonly string $loginPath = '/login',
-        private readonly bool $verifySignature = false,
+        private readonly bool $verifySignature = true,
     ) {
     }
 
@@ -54,23 +51,23 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
         $state = $request->query->getString('state');
         $session = $request->getSession();
 
-        // Validate state
-        $expectedState = $session->get(self::SESSION_STATE);
-        if ($state !== $expectedState) {
+        // Validate state (timing-safe comparison)
+        $expectedState = $session->get(OidcConstants::SESSION_STATE);
+        if ($expectedState === null || !hash_equals($expectedState, $state)) {
             throw new AuthenticationException('Invalid state parameter');
         }
 
-        $codeVerifier = $session->get(self::SESSION_VERIFIER);
+        $codeVerifier = $session->get(OidcConstants::SESSION_VERIFIER);
         if ($codeVerifier === null) {
             throw new AuthenticationException('Missing code verifier');
         }
 
-        $expectedNonce = $session->get(self::SESSION_NONCE);
+        $expectedNonce = $session->get(OidcConstants::SESSION_NONCE);
 
         // Clear session data
-        $session->remove(self::SESSION_STATE);
-        $session->remove(self::SESSION_NONCE);
-        $session->remove(self::SESSION_VERIFIER);
+        $session->remove(OidcConstants::SESSION_STATE);
+        $session->remove(OidcConstants::SESSION_NONCE);
+        $session->remove(OidcConstants::SESSION_VERIFIER);
 
         try {
             $tokenResponse = $this->oidcClient->exchangeCode($code, $codeVerifier);
@@ -78,11 +75,12 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
             throw new AuthenticationException('Token exchange failed: ' . $e->error);
         }
 
-        // Get user identifier and validate nonce from ID token
-        $userId = $this->extractUserId($tokenResponse, $expectedNonce);
+        // Get claims from ID token
+        $claims = $this->extractClaims($tokenResponse, $expectedNonce);
+        $userId = $claims['iss'] . '|' . $claims['sub'];
 
         return new SelfValidatingPassport(
-            new UserBadge($userId, fn (string $id) => $this->userProvider->loadOrCreateUser($id, $tokenResponse))
+            new UserBadge($userId, fn (string $id) => $this->userProvider->loadOrCreateUser($claims, $tokenResponse))
         );
     }
 
@@ -107,31 +105,39 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
         $authData = $this->oidcClient->buildAuthorizationUrl($this->scopes);
 
         $session = $request->getSession();
-        $session->set(self::SESSION_STATE, $authData['state']);
-        $session->set(self::SESSION_NONCE, $authData['nonce']);
-        $session->set(self::SESSION_VERIFIER, $authData['code_verifier']);
+        $session->set(OidcConstants::SESSION_STATE, $authData['state']);
+        $session->set(OidcConstants::SESSION_NONCE, $authData['nonce']);
+        $session->set(OidcConstants::SESSION_VERIFIER, $authData['code_verifier']);
 
         return new RedirectResponse($authData['url']);
     }
 
-    private function extractUserId(TokenResponse $tokenResponse, ?string $expectedNonce): string
+    /**
+     * @return array<string, mixed>
+     */
+    private function extractClaims(TokenResponse $tokenResponse, ?string $expectedNonce): array
     {
         if ($tokenResponse->idToken !== null) {
             $claims = $this->oidcClient->decodeIdToken($tokenResponse->idToken, $this->verifySignature);
 
-            // Validate nonce if present
-            if ($expectedNonce !== null && isset($claims['nonce']) && $claims['nonce'] !== $expectedNonce) {
+            // Validate nonce if present (timing-safe comparison)
+            if ($expectedNonce !== null && isset($claims['nonce']) && !hash_equals($expectedNonce, $claims['nonce'])) {
                 throw new AuthenticationException('Invalid nonce in ID token');
             }
 
-            if (isset($claims['sub'])) {
-                return $claims['sub'];
+            if (isset($claims['sub'], $claims['iss'])) {
+                return $claims;
             }
         }
 
         // Fallback: UserInfo endpoint
         $userInfo = $this->oidcClient->getUserInfo($tokenResponse->accessToken);
 
-        return $userInfo->sub;
+        return [
+            'sub' => $userInfo->sub,
+            'iss' => $this->oidcClient->getConfig()->issuer,
+            'email' => $userInfo->email,
+            'name' => $userInfo->name,
+        ];
     }
 }

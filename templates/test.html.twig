@@ -1,0 +1,139 @@
+{% extends '@EuripSso/layout.html.twig' %}
+
+{% block title %}Auth Workflow Test - EURIP SSO{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">OIDC Authentication Workflow</h1>
+        <p class="card-subtitle">
+            {% if is_authenticated %}
+                <span class="badge badge-success">Authenticated</span>
+            {% else %}
+                <span class="badge badge-warning">Not Authenticated</span>
+            {% endif %}
+        </p>
+    </div>
+
+    <ul class="steps">
+        {% for step in workflow_steps %}
+            <li class="step step-{{ step.status }}">
+                <div class="step-number">
+                    {% if step.status == 'done' %}
+                        ✓
+                    {% else %}
+                        {{ step.step }}
+                    {% endif %}
+                </div>
+                <div class="step-content">
+                    <div class="step-name">{{ step.name }}</div>
+                    <div class="step-description">{{ step.description }}</div>
+                    {% if step.route and step.status == 'pending' %}
+                        <a href="{{ path(step.route) }}" class="btn btn-primary" style="margin-top: 8px;">
+                            Start Login
+                        </a>
+                    {% endif %}
+                </div>
+            </li>
+        {% endfor %}
+    </ul>
+
+    <div class="actions">
+        {% if is_authenticated %}
+            <a href="{{ path('eurip_sso_profile') }}" class="btn btn-success">View Profile</a>
+            <a href="{{ path('eurip_sso_logout') }}" class="btn btn-danger">Logout</a>
+        {% else %}
+            <a href="{{ path('eurip_sso_login') }}" class="btn btn-primary">Login with SSO</a>
+        {% endif %}
+        <a href="{{ path('eurip_sso_debug') }}" class="btn btn-outline">Debug Info</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Bundle Routes</h2>
+        <p class="card-subtitle">All routes provided by eurip-sso bundle</p>
+    </div>
+
+    <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
+        <thead>
+            <tr style="border-bottom: 2px solid #eee; text-align: left;">
+                <th style="padding: 8px 0;">Route Name</th>
+                <th style="padding: 8px 0;">Path</th>
+                <th style="padding: 8px 0;">Description</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px 0;"><code class="code">eurip_sso_login</code></td>
+                <td style="padding: 8px 0;"><a href="{{ path('eurip_sso_login') }}">/auth/login</a></td>
+                <td style="padding: 8px 0;">Initiates OIDC login flow</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px 0;"><code class="code">eurip_sso_callback</code></td>
+                <td style="padding: 8px 0;">/auth/callback</td>
+                <td style="padding: 8px 0;">Handles IdP callback</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px 0;"><code class="code">eurip_sso_logout</code></td>
+                <td style="padding: 8px 0;"><a href="{{ path('eurip_sso_logout') }}">/auth/logout</a></td>
+                <td style="padding: 8px 0;">Logs out and redirects to IdP logout</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px 0;"><code class="code">eurip_sso_profile</code></td>
+                <td style="padding: 8px 0;"><a href="{{ path('eurip_sso_profile') }}">/auth/profile</a></td>
+                <td style="padding: 8px 0;">Shows user profile (optional)</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px 0;"><code class="code">eurip_sso_debug</code></td>
+                <td style="padding: 8px 0;"><a href="{{ path('eurip_sso_debug') }}">/auth/debug</a></td>
+                <td style="padding: 8px 0;">OIDC configuration debug (optional)</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px 0;"><code class="code">eurip_sso_test</code></td>
+                <td style="padding: 8px 0;"><a href="{{ path('eurip_sso_test') }}">/auth/test</a></td>
+                <td style="padding: 8px 0;">This workflow test page (optional)</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Configuration</h2>
+    </div>
+    <div class="info-grid">
+        <span class="info-label">Issuer</span>
+        <span class="info-value code">{{ config.issuer }}</span>
+
+        <span class="info-label">Client ID</span>
+        <span class="info-value code">{{ config.client_id }}</span>
+
+        <span class="info-label">Scopes</span>
+        <span class="info-value">
+            {% for scope in config.scopes %}
+                <span class="badge badge-secondary">{{ scope }}</span>
+            {% endfor %}
+        </span>
+    </div>
+</div>
+
+{% if is_authenticated %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Current User</h2>
+    </div>
+    <div class="info-grid">
+        <span class="info-label">Identifier</span>
+        <span class="info-value code">{{ user.userIdentifier }}</span>
+
+        <span class="info-label">Roles</span>
+        <span class="info-value">
+            {% for role in user.roles %}
+                <span class="badge badge-info">{{ role }}</span>
+            {% endfor %}
+        </span>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

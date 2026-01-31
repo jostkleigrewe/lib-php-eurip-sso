@@ -1,6 +1,7 @@
 parameters:
-    level: 6
+    level: 8
     paths:
         - src
     excludePaths:
-        - src/Resources
+        analyseAndScan:
+            - src/Resources (?)

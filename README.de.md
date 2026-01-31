@@ -1,24 +1,24 @@
 # EURIP SSO Bundle
 
-OIDC Client Library and Symfony Bundle for Single Sign-On.
+OIDC Client Library und Symfony Bundle für Single Sign-On.
 
-🇩🇪 [Deutsche Version](README.de.md)
+🇬🇧 [English Version](README.md)
 
 ## Features
 
-- **Zero-Code Integration** - Complete OIDC auth via configuration only
-- OIDC Authorization Code Flow with PKCE (S256)
+- **Zero-Code Integration** - Komplette OIDC-Authentifizierung nur durch Konfiguration
+- OIDC Authorization Code Flow mit PKCE (S256)
 - Auto-Discovery via `.well-known/openid-configuration`
-- Dual-URL Support (internal/public issuer for Docker/K8s)
-- Automatic User Provisioning with Doctrine
-- Hybrid User Strategy (sync SSO data, preserve local data)
-- Extensive Event System (6 events)
+- Dual-URL Support (interne/öffentliche Issuer-URL für Docker/K8s)
+- Automatische User-Provisionierung mit Doctrine
+- Hybrid User Strategy (SSO-Daten synchronisieren, lokale Daten behalten)
+- Umfangreiches Event-System (6 Events)
 - PSR-3 Logging, PSR-18 HTTP Client
 
-## Requirements
+## Voraussetzungen
 
 - PHP 8.2+
-- Symfony 7.0+ or 8.0+
+- Symfony 7.0+ oder 8.0+
 - PSR-18 HTTP Client
 
 ## Installation
@@ -34,7 +34,7 @@ Jostkleigrewe\Sso\Bundle\EuripSsoBundle::class => ['all' => true],
 
 ## Quick Start: Zero-Code Integration
 
-### 1. Configure Bundle
+### 1. Bundle konfigurieren
 
 ```yaml
 # config/packages/eurip_sso.yaml
@@ -67,7 +67,7 @@ eurip_sso:
         auto_create: true
 ```
 
-### 2. Configure Security
+### 2. Security konfigurieren
 
 ```yaml
 # config/packages/security.yaml
@@ -83,25 +83,37 @@ security:
             custom_authenticator: App\Security\NoopAuthenticator
 ```
 
-**Done!** Routes available:
-- `/auth/login` - Start login
-- `/auth/callback` - SSO callback
+**Fertig!** Verfügbare Routen:
+- `/auth/login` - Login starten
+- `/auth/callback` - SSO Callback
 - `/auth/logout` - Logout
-- `/auth/profile` - User profile
-- `/auth/debug` - OIDC config
+- `/auth/profile` - User-Profil
+- `/auth/debug` - OIDC-Konfiguration
+
+## Hybrid User Strategy
+
+**Vom SSO synchronisiert (bei jedem Login):**
+- Email
+- External Roles (Gruppen/Rollen aus SSO)
+- Weitere Claims (konfigurierbar via `claims_sync`)
+
+**Lokal in der App:**
+- App-spezifische Rollen (z.B. ROLE_ADMIN manuell vergeben)
+- User Preferences
+- App-spezifische Daten
 
 ## Events
 
-| Event | When | Purpose |
-|-------|------|---------|
-| `OidcPreLoginEvent` | Before IdP redirect | Modify scopes, cancel |
-| `OidcLoginSuccessEvent` | After login | Modify roles, redirect |
-| `OidcLoginFailureEvent` | On error | Custom error response |
-| `OidcUserCreatedEvent` | New user | Modify before persist |
-| `OidcUserUpdatedEvent` | User updated | Modify before flush |
-| `OidcPreLogoutEvent` | Before logout | Skip SSO logout |
+| Event | Wann | Zweck |
+|-------|------|-------|
+| `OidcPreLoginEvent` | Vor IdP-Redirect | Scopes ändern, abbrechen |
+| `OidcLoginSuccessEvent` | Nach Login | Rollen ändern, Redirect |
+| `OidcLoginFailureEvent` | Bei Fehler | Custom Error Response |
+| `OidcUserCreatedEvent` | Neuer User | Vor Persist ändern |
+| `OidcUserUpdatedEvent` | User aktualisiert | Vor Flush ändern |
+| `OidcPreLogoutEvent` | Vor Logout | SSO-Logout überspringen |
 
-### Example: Add Role Based on Claims
+### Beispiel: Rolle basierend auf Claims hinzufügen
 
 ```php
 #[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
@@ -116,18 +128,34 @@ class AddAdminRoleListener
 }
 ```
 
-## Configuration Reference
+### Beispiel: Willkommens-Mail bei neuen Usern
+
+```php
+#[AsEventListener(event: OidcUserCreatedEvent::NAME)]
+class WelcomeEmailListener
+{
+    public function __invoke(OidcUserCreatedEvent $event): void
+    {
+        $email = $event->claims['email'] ?? null;
+        if ($email) {
+            // Willkommens-Mail senden
+        }
+    }
+}
+```
+
+## Konfigurationsreferenz
 
 ```yaml
 eurip_sso:
-    # Required
+    # Erforderlich
     issuer: '%env(SSO_ISSUER_URL)%'
     client_id: '%env(OIDC_CLIENT_ID)%'
     redirect_uri: '%env(APP_URL)%/auth/callback'
 
     # Optional
     client_secret: null
-    public_issuer: null              # For Docker/K8s
+    public_issuer: null              # Für Docker/K8s
     scopes: [openid, profile, email]
 
     cache:
@@ -164,7 +192,47 @@ eurip_sso:
         auto_create: true
 ```
 
-## Standalone Usage
+## Docker/Kubernetes (Dual-URL)
+
+```yaml
+eurip_sso:
+    # Interne URL für Token-Exchange (Server-zu-Server)
+    issuer: 'http://sso-container:8080'
+
+    # Öffentliche URL für Browser-Redirects
+    public_issuer: 'https://sso.example.com'
+```
+
+## Migration von eigener Implementierung
+
+### Vorher (~600 Zeilen Code)
+
+```
+src/
+├── Controller/AuthController.php
+├── Security/
+│   ├── AppUserProvider.php
+│   ├── JwtValidator.php
+│   └── LoginStateStorage.php
+└── OAuth/
+    ├── OidcTokenClient.php
+    └── OidcDiscoveryClient.php
+```
+
+### Nachher (~30 Zeilen Config)
+
+```
+config/packages/eurip_sso.yaml
+```
+
+### Migrations-Schritte
+
+1. Bundle konfigurieren mit `controller.enabled: true` und `user_provider.enabled: true`
+2. Security.yaml: Provider auf `DoctrineOidcUserProvider` ändern
+3. Alte Dateien entfernen
+4. Event Listener für Custom-Logik hinzufügen (optional)
+
+## Standalone Usage (ohne Bundle)
 
 ```php
 $client = OidcClient::fromDiscovery(
@@ -177,7 +245,7 @@ $client = OidcClient::fromDiscovery(
 );
 
 $authData = $client->buildAuthorizationUrl(['openid', 'profile']);
-// Redirect to $authData['url']
+// Redirect zu $authData['url']
 
 // Callback
 $tokens = $client->exchangeCode($code, $authData['code_verifier']);
@@ -185,6 +253,6 @@ $claims = $client->decodeIdToken($tokens->idToken);
 $client->validateClaims($claims, $authData['nonce']);
 ```
 
-## License
+## Lizenz
 
 MIT License

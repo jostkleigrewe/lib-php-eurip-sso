@@ -381,6 +381,42 @@ final class OidcClient
     }
 
     /**
+     * DE: Lädt JWKS vorab (für Cache-Warmup).
+     * EN: Preloads JWKS data (for cache warmup).
+     *
+     * @param array<string, mixed> $jwks
+     */
+    public function preloadJwks(array $jwks): void
+    {
+        if (!isset($jwks['keys']) || !is_array($jwks['keys'])) {
+            throw new \InvalidArgumentException('Invalid JWKS format: missing keys array');
+        }
+        $this->jwksCache = $jwks;
+        $this->logger->debug('JWKS preloaded', ['keys_count' => count($jwks['keys'])]);
+    }
+
+    /**
+     * DE: Ruft JWKS ab und gibt sie zurück (für Cache-Warmup).
+     * EN: Fetches JWKS and returns it (for cache warmup).
+     *
+     * @return array<string, mixed>
+     * @throws OidcProtocolException
+     */
+    public function fetchAndCacheJwks(): array
+    {
+        return $this->fetchJwks();
+    }
+
+    /**
+     * DE: Prüft ob JWKS bereits geladen sind.
+     * EN: Checks if JWKS are already loaded.
+     */
+    public function hasJwksLoaded(): bool
+    {
+        return $this->jwksCache !== null;
+    }
+
+    /**
      * @return array<string, mixed>
      * @throws OidcProtocolException
      */
@@ -504,7 +540,8 @@ final class OidcClient
 
     private function generateRandomString(int $length): string
     {
-        return bin2hex(random_bytes($length / 2));
+        $bytes = max(1, intdiv($length, 2));
+        return bin2hex(random_bytes($bytes));
     }
 
     private function generateCodeVerifier(): string

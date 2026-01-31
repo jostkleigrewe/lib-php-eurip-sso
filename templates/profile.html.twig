@@ -1,0 +1,56 @@
+{% extends '@EuripSso/layout.html.twig' %}
+
+{% block title %}User Profile - EURIP SSO{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">User Profile</h1>
+        <p class="card-subtitle">Authenticated via OIDC</p>
+    </div>
+
+    <div class="info-grid">
+        <span class="info-label">User Identifier</span>
+        <span class="info-value code">{{ user.userIdentifier }}</span>
+
+        <span class="info-label">Roles</span>
+        <span class="info-value">
+            {% for role in user.roles %}
+                <span class="badge badge-info">{{ role }}</span>
+            {% endfor %}
+        </span>
+
+        {% if user.email is defined and user.email %}
+            <span class="info-label">Email</span>
+            <span class="info-value">{{ user.email }}</span>
+        {% endif %}
+
+        {% if user.issuer is defined and user.issuer %}
+            <span class="info-label">Issuer</span>
+            <span class="info-value code">{{ user.issuer }}</span>
+        {% endif %}
+
+        {% if user.subject is defined and user.subject %}
+            <span class="info-label">Subject</span>
+            <span class="info-value code">{{ user.subject }}</span>
+        {% endif %}
+
+        {% if user.id is defined and user.id %}
+            <span class="info-label">Local ID</span>
+            <span class="info-value code">{{ user.id }}</span>
+        {% endif %}
+    </div>
+
+    <div class="actions">
+        <a href="{{ path('eurip_sso_logout') }}" class="btn btn-danger">Logout</a>
+        <a href="{{ path('eurip_sso_test') }}" class="btn btn-outline">Back to Test</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">User Object (Debug)</h2>
+    </div>
+    <pre class="code-block">{{ user|json_encode(constant('JSON_PRETTY_PRINT')) }}</pre>
+</div>
+{% endblock %}
