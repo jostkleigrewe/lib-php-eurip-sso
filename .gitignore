@@ -1,3 +1,32 @@
-/.idea/
-/_tmp/
+# Dependencies
 /vendor/
+composer.lock
+
+# IDE
+/.idea/
+/.vscode/
+*.swp
+*.swo
+
+# Temp
+/_tmp/
+
+# PHPUnit
+/.phpunit.cache/
+/phpunit.xml
+/.phpunit.result.cache
+/report.xml
+/coverage/
+
+# PHPStan
+/phpstan.neon
+
+# ECS
+/ecs.php.cache
+
+# Composer
+/.composer/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -12,23 +12,12 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * EXAMPLE CONTROLLER - Kopiere diesen Controller in deine App und passe ihn an.
+ * DE: BEISPIEL-CONTROLLER - Kopiere und passe an.
+ *     Zeigt den kompletten OIDC Login Flow: login, callback, logout.
+ * EN: EXAMPLE CONTROLLER - Copy and customize.
+ *     Shows the complete OIDC login flow: login, callback, logout.
  *
- * Dieser Controller zeigt den kompletten OIDC Login Flow:
- * 1. /auth/login    - Redirect zum SSO
- * 2. /auth/callback - Verarbeitet den Callback vom SSO
- * 3. /auth/logout   - Logout
- *
- * USAGE:
- * 1. Kopiere diese Datei nach src/Controller/AuthController.php
- * 2. Passe den Namespace an: namespace App\Controller;
- * 3. Registriere die Routes in routes.yaml oder via Attributes
- * 4. Implementiere die User-Logik in handleSuccessfulLogin()
- *
- * ROUTES (als Attribute oder in routes.yaml):
- *   app_auth_login:    GET /auth/login
- *   app_auth_callback: GET /auth/callback
- *   app_auth_logout:   GET /auth/logout
+ * Usage: Copy to src/Controller/AuthController.php, adjust namespace.
  */
 class ExampleAuthController extends AbstractController
 {
@@ -147,7 +136,6 @@ class ExampleAuthController extends AbstractController
             $session->remove('_auth_return_url');
 
             return $this->redirect($returnUrl);
-
         } catch (TokenExchangeFailedException $e) {
             $this->addFlash('error', 'Login fehlgeschlagen: ' . $e->errorDescription);
 

@@ -8,6 +8,6 @@ namespace Jostkleigrewe\Sso\Contracts\Exception;
  * DE: Protokoll- oder Validierungsfehler im OAuth2/OIDC Flow.
  * EN: Protocol or validation error in the OAuth2/OIDC flow.
  */
-final class OidcProtocolException extends \RuntimeException
+class OidcProtocolException extends \RuntimeException
 {
 }

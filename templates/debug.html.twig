@@ -1,0 +1,83 @@
+{% extends '@EuripSso/layout.html.twig' %}
+
+{% block title %}OIDC Debug - EURIP SSO{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">OIDC Configuration</h1>
+        <p class="card-subtitle">Current bundle configuration and discovered endpoints</p>
+    </div>
+
+    <h2>Client Configuration</h2>
+    <div class="info-grid" style="margin-bottom: 24px;">
+        <span class="info-label">Issuer (Internal)</span>
+        <span class="info-value code">{{ config.issuer }}</span>
+
+        {% if config.public_issuer and config.public_issuer != config.issuer %}
+            <span class="info-label">Issuer (Public)</span>
+            <span class="info-value code">{{ config.public_issuer }}</span>
+        {% endif %}
+
+        <span class="info-label">Client ID</span>
+        <span class="info-value code">{{ config.client_id }}</span>
+
+        <span class="info-label">Redirect URI</span>
+        <span class="info-value code">{{ config.redirect_uri }}</span>
+
+        <span class="info-label">Scopes</span>
+        <span class="info-value">
+            {% for scope in config.scopes %}
+                <span class="badge badge-secondary">{{ scope }}</span>
+            {% endfor %}
+        </span>
+    </div>
+
+    <h2>Discovered Endpoints</h2>
+    <div class="info-grid" style="margin-bottom: 24px;">
+        <span class="info-label">Authorization</span>
+        <span class="info-value code">{{ config.authorization_endpoint ?? 'not configured' }}</span>
+
+        <span class="info-label">Token</span>
+        <span class="info-value code">{{ config.token_endpoint ?? 'not configured' }}</span>
+
+        <span class="info-label">UserInfo</span>
+        <span class="info-value code">{{ config.userinfo_endpoint ?? 'not configured' }}</span>
+
+        <span class="info-label">JWKS</span>
+        <span class="info-value code">{{ config.jwks_uri ?? 'not configured' }}</span>
+
+        <span class="info-label">End Session</span>
+        <span class="info-value code">{{ config.end_session_endpoint ?? 'not configured' }}</span>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Authorization URL Preview</h2>
+        <p class="card-subtitle">This URL would be used for the next login attempt</p>
+    </div>
+    <pre class="code-block">{{ auth_url_preview }}</pre>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Current Session</h2>
+    </div>
+    <div class="info-grid">
+        <span class="info-label">Authenticated</span>
+        <span class="info-value">
+            {% if user %}
+                <span class="badge badge-success">Yes</span>
+            {% else %}
+                <span class="badge badge-warning">No</span>
+            {% endif %}
+        </span>
+
+        {% if user %}
+            <span class="info-label">User</span>
+            <span class="info-value code">{{ user.userIdentifier }}</span>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

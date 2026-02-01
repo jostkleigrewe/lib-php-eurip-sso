@@ -1,0 +1,104 @@
+stages:
+  - build
+  - quality
+  - test
+
+variables:
+  COMPOSER_HOME: ${CI_PROJECT_DIR}/.composer
+  COMPOSER_CACHE_DIR: ${CI_PROJECT_DIR}/.composer/cache
+
+# Cache composer dependencies between jobs
+.composer-cache: &composer-cache
+  cache:
+    key: composer-${CI_COMMIT_REF_SLUG}
+    paths:
+      - .composer/
+      - vendor/
+    policy: pull-push
+
+# Base job for PHP
+.php-base:
+  image: php:8.3-cli
+  before_script:
+    - apt-get update && apt-get install -y git unzip libzip-dev
+    - docker-php-ext-install zip
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - composer install --prefer-dist --no-progress --no-interaction
+
+# ============================================================================
+# BUILD STAGE
+# ============================================================================
+
+composer:
+  stage: build
+  extends: .php-base
+  <<: *composer-cache
+  script:
+    - composer validate --strict
+    - composer install --prefer-dist --no-progress
+  artifacts:
+    paths:
+      - vendor/
+    expire_in: 1 hour
+
+# ============================================================================
+# QUALITY STAGE
+# ============================================================================
+
+phpstan:
+  stage: quality
+  extends: .php-base
+  needs: [composer]
+  script:
+    - composer stan
+  allow_failure: false
+
+coding-standards:
+  stage: quality
+  extends: .php-base
+  needs: [composer]
+  script:
+    - composer cs
+  allow_failure: false
+
+# ============================================================================
+# TEST STAGE
+# ============================================================================
+
+phpunit:
+  stage: test
+  extends: .php-base
+  needs: [composer]
+  script:
+    - composer test -- --coverage-text --colors=never
+  coverage: '/^\s*Lines:\s*\d+.\d+\%/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+    expire_in: 1 week
+
+# ============================================================================
+# PHP VERSION MATRIX
+# ============================================================================
+
+.test-matrix:
+  stage: test
+  needs: []
+  extends: .php-base
+  script:
+    - composer install --prefer-dist --no-progress
+    - composer test
+
+test:php82:
+  extends: .test-matrix
+  image: php:8.2-cli
+
+test:php83:
+  extends: .test-matrix
+  image: php:8.3-cli
+
+test:php84:
+  extends: .test-matrix
+  image: php:8.4-cli
+  allow_failure: true
