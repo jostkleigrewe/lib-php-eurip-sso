@@ -1,0 +1,46 @@
+# EuripSsoBundle - English translations
+# Translation domain: eurip_sso
+
+eurip_sso:
+    error:
+        # OAuth 2.0 Authorization Errors (RFC 6749 §4.1.2.1)
+        access_denied: "Access was denied. Please try again or contact support."
+        invalid_request: "The login request was invalid. Please try again."
+        unauthorized_client: "This application is not authorized to perform this action."
+        unsupported_response_type: "The login method is not supported. Please contact support."
+        invalid_scope: "The requested permissions are not available."
+        server_error: "The authentication server encountered an error. Please try again later."
+        temporarily_unavailable: "The authentication service is temporarily unavailable. Please try again later."
+
+        # OAuth 2.0 Token Errors (RFC 6749 §5.2)
+        invalid_client: "Application authentication failed. Please contact support."
+        invalid_grant: "The login session has expired. Please try again."
+        unsupported_grant_type: "The authentication method is not supported."
+
+        # OpenID Connect Core 1.0 Errors (§3.1.2.6)
+        interaction_required: "Additional interaction is required. Please try again."
+        login_required: "Please log in to continue."
+        consent_required: "Your consent is required to continue."
+        request_not_supported: "The login request format is not supported."
+        request_uri_not_supported: "The login request method is not supported."
+        registration_not_supported: "Dynamic registration is not supported."
+
+        # Internal Errors
+        claims_invalid: "Login verification failed. Please try again."
+        protocol_error: "A login error occurred. Please try again."
+        expired_token: "Your session has expired. Please log in again."
+        internal_error: "An unexpected error occurred. Please try again later."
+
+        # Fallback for unknown errors
+        unknown: "Login failed. Please try again."
+
+    # Flash messages
+    flash:
+        logout_success: "Successfully logged out."
+        welcome: "Welcome, %name%!"
+
+    # UI Labels (optional, for templates)
+    ui:
+        login: "Log in"
+        logout: "Log out"
+        login_with_sso: "Log in with SSO"

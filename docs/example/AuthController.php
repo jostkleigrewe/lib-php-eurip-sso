@@ -2,7 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Jostkleigrewe\Sso\Bundle\Controller;
+// =============================================================================
+// EXAMPLE CONTROLLER - Copy to your project and customize!
+// =============================================================================
+//
+// 1. Copy this file to: src/Controller/AuthController.php
+// 2. Change the namespace below to: App\Controller
+// 3. Uncomment and configure the Route attributes
+// 4. Implement handleSuccessfulLogin() for your user model
+//
+// This is a minimal example showing the complete OIDC flow.
+// For production use, consider using the bundle's AuthenticationController
+// with controller.enabled: true in your config.
+// =============================================================================
+
+namespace App\Controller; // <-- CHANGE THIS to your namespace
 
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Jostkleigrewe\Sso\Contracts\Exception\TokenExchangeFailedException;
@@ -10,16 +24,16 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+// Uncomment for Route attributes:
+// use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * DE: BEISPIEL-CONTROLLER - Kopiere und passe an.
  *     Zeigt den kompletten OIDC Login Flow: login, callback, logout.
  * EN: EXAMPLE CONTROLLER - Copy and customize.
  *     Shows the complete OIDC login flow: login, callback, logout.
- *
- * Usage: Copy to src/Controller/AuthController.php, adjust namespace.
  */
-class ExampleAuthController extends AbstractController
+class AuthController extends AbstractController
 {
     private const SESSION_STATE = '_sso_state';
     private const SESSION_NONCE = '_sso_nonce';
@@ -32,9 +46,8 @@ class ExampleAuthController extends AbstractController
 
     /**
      * Step 1: Login starten - Redirect zum SSO.
-     *
-     * #[Route('/auth/login', name: 'app_auth_login')]
      */
+    // #[Route('/auth/login', name: 'app_auth_login')]
     public function login(Request $request): RedirectResponse
     {
         // Optional: Bereits eingeloggt?
@@ -67,9 +80,8 @@ class ExampleAuthController extends AbstractController
 
     /**
      * Step 2: Callback vom SSO verarbeiten.
-     *
-     * #[Route('/auth/callback', name: 'app_auth_callback')]
      */
+    // #[Route('/auth/callback', name: 'app_auth_callback')]
     public function callback(Request $request): Response
     {
         $session = $request->getSession();
@@ -145,9 +157,8 @@ class ExampleAuthController extends AbstractController
 
     /**
      * Step 3: Logout.
-     *
-     * #[Route('/auth/logout', name: 'app_auth_logout')]
      */
+    // #[Route('/auth/logout', name: 'app_auth_logout')]
     public function logout(Request $request): RedirectResponse
     {
         // Session beenden

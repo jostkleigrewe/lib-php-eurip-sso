@@ -10,6 +10,7 @@ use Jostkleigrewe\Sso\Bundle\Service\OidcAuthenticationService;
 use Jostkleigrewe\Sso\Contracts\Exception\ClaimsValidationException;
 use Jostkleigrewe\Sso\Contracts\Exception\OidcProtocolException;
 use Jostkleigrewe\Sso\Contracts\Exception\TokenExchangeFailedException;
+use Jostkleigrewe\Sso\Contracts\Oidc\OidcErrorCode;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -17,6 +18,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * DE: Controller für OIDC Authentication (login, callback, logout).
@@ -27,6 +29,7 @@ final class AuthenticationController extends AbstractController
     public function __construct(
         private readonly OidcAuthenticationService $authService,
         private readonly TokenStorageInterface $tokenStorage,
+        private readonly TranslatorInterface $translator,
         private readonly ?LoggerInterface $logger = null,
         private readonly string $defaultTargetPath = '/',
         private readonly string $afterLogoutPath = '/',
@@ -239,7 +242,7 @@ final class AuthenticationController extends AbstractController
             return new RedirectResponse($logoutUrl);
         }
 
-        $this->addFlash('success', 'Successfully logged out');
+        $this->addFlash('success', $this->translator->trans('eurip_sso.flash.logout_success', [], 'eurip_sso'));
         return $this->redirect($this->afterLogoutPath);
     }
 
@@ -269,18 +272,12 @@ final class AuthenticationController extends AbstractController
      */
     private function getSanitizedErrorMessage(string $errorCode): string
     {
-        return match ($errorCode) {
-            'access_denied' => 'Access was denied. Please try again or contact support.',
-            'invalid_request' => 'The login request was invalid. Please try again.',
-            'invalid_grant' => 'The login session has expired. Please try again.',
-            'expired_token' => 'Your session has expired. Please log in again.',
-            'claims_invalid' => 'Login verification failed. Please try again.',
-            'protocol_error' => 'A login error occurred. Please try again.',
-            'internal_error' => 'An unexpected error occurred. Please try again later.',
-            'login_required' => 'Please log in to continue.',
-            'consent_required' => 'Consent is required to continue.',
-            'interaction_required' => 'Additional interaction is required. Please try again.',
-            default => 'Login failed. Please try again.',
-        };
+        $error = OidcErrorCode::fromString($errorCode);
+
+        return $this->translator->trans(
+            $error->getTranslationKey(),
+            [],
+            'eurip_sso',
+        );
     }
 }

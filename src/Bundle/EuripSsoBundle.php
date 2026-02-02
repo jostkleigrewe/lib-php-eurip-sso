@@ -302,6 +302,7 @@ final class EuripSsoBundle extends AbstractBundle
         $controllerDef = $services->set(AuthenticationController::class)
             ->arg('$authService', new Reference(OidcAuthenticationService::class))
             ->arg('$tokenStorage', new Reference('security.token_storage'))
+            ->arg('$translator', new Reference('translator'))
             ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE))
             ->arg('$defaultTargetPath', $config['routes']['after_login'])
             ->arg('$afterLogoutPath', $config['routes']['after_logout'])
