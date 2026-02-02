@@ -116,6 +116,107 @@ class AddAdminRoleListener
 }
 ```
 
+## Client Services
+
+The bundle provides optional client services for easy access to claims, authorization checks, and API calls.
+
+### Enable Client Services
+
+```yaml
+eurip_sso:
+    client_services:
+        enabled: true
+        store_access_token: true
+```
+
+### Available Services
+
+| Service | Alias | Purpose |
+|---------|-------|---------|
+| `EuripSsoClaimsService` | `eurip_sso.claims` | Access ID token claims |
+| `EuripSsoAuthorizationService` | `eurip_sso.auth` | Permission/role checks |
+| `EuripSsoApiClient` | `eurip_sso.api` | API calls to SSO server |
+| `EuripSsoTokenStorage` | `eurip_sso.token_storage` | Token storage access |
+| `EuripSsoFacade` | `eurip_sso.facade` | Combines all services |
+
+### Usage Examples
+
+```php
+// Direct service injection
+public function __construct(
+    private readonly EuripSsoAuthorizationService $auth,
+    private readonly EuripSsoClaimsService $claims,
+) {}
+
+public function edit(): Response
+{
+    // Require permission (throws PermissionDeniedException if missing)
+    $this->auth->requirePermission('edit:article');
+
+    // Access claims
+    $email = $this->claims->getEmail();
+    $userId = $this->claims->getUserId();
+    $roles = $this->claims->getClientRoles();
+
+    // Check permissions
+    if ($this->auth->hasPermission('delete:article')) {
+        // ...
+    }
+}
+
+// Or use the Facade
+public function __construct(private readonly EuripSsoFacade $sso) {}
+
+public function index(): Response
+{
+    $email = $this->sso->getEmail();
+    $isAdmin = $this->sso->hasRole('ROLE_ADMIN');
+
+    // Access nested services
+    $userInfo = $this->sso->api()->getUserInfo();
+    $allClaims = $this->sso->claims()->all();
+}
+```
+
+### Authorization Methods
+
+```php
+// Check methods (return bool)
+$auth->hasRole('ROLE_ADMIN');
+$auth->hasClientRole('editor');
+$auth->hasPermission('edit:article');
+$auth->hasAnyPermission(['edit:article', 'delete:article']);
+$auth->hasAllPermissions(['view:article', 'edit:article']);
+$auth->isInGroup('editors');
+$auth->canAccess();  // Not blocked
+
+// Require methods (throw PermissionDeniedException)
+$auth->requireRole('ROLE_ADMIN');
+$auth->requirePermission('edit:article');
+$auth->requireAccess();
+```
+
+### Claims Access
+
+```php
+// Standard claims
+$claims->getEmail();
+$claims->getName();
+$claims->getUserId();  // Subject
+$claims->getLocale();
+
+// Client-specific claims (EURIP SSO)
+$claims->getRoles();            // Global roles
+$claims->getClientRoles();      // Client-specific roles
+$claims->getClientPermissions();
+$claims->getClientGroups();
+$claims->isBlocked();
+
+// Generic access
+$claims->get('custom_claim', 'default');
+$claims->all();  // All claims as array
+```
+
 ## Configuration Reference
 
 ```yaml
@@ -162,6 +263,10 @@ eurip_sso:
         default_roles: [ROLE_USER]
         sync_on_login: true
         auto_create: true
+
+    client_services:
+        enabled: false
+        store_access_token: true
 ```
 
 ## Standalone Usage

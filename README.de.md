@@ -144,6 +144,107 @@ class WelcomeEmailListener
 }
 ```
 
+## Client Services
+
+Das Bundle bietet optionale Client-Services für einfachen Zugriff auf Claims, Berechtigungs-Checks und API-Calls.
+
+### Client Services aktivieren
+
+```yaml
+eurip_sso:
+    client_services:
+        enabled: true
+        store_access_token: true
+```
+
+### Verfügbare Services
+
+| Service | Alias | Zweck |
+|---------|-------|-------|
+| `EuripSsoClaimsService` | `eurip_sso.claims` | Zugriff auf ID-Token Claims |
+| `EuripSsoAuthorizationService` | `eurip_sso.auth` | Permission/Rollen-Checks |
+| `EuripSsoApiClient` | `eurip_sso.api` | API-Calls zum SSO Server |
+| `EuripSsoTokenStorage` | `eurip_sso.token_storage` | Token-Speicher-Zugriff |
+| `EuripSsoFacade` | `eurip_sso.facade` | Kombiniert alle Services |
+
+### Nutzungsbeispiele
+
+```php
+// Direkte Service-Injection
+public function __construct(
+    private readonly EuripSsoAuthorizationService $auth,
+    private readonly EuripSsoClaimsService $claims,
+) {}
+
+public function edit(): Response
+{
+    // Permission erfordern (wirft PermissionDeniedException wenn fehlend)
+    $this->auth->requirePermission('edit:article');
+
+    // Claims abrufen
+    $email = $this->claims->getEmail();
+    $userId = $this->claims->getUserId();
+    $roles = $this->claims->getClientRoles();
+
+    // Permissions prüfen
+    if ($this->auth->hasPermission('delete:article')) {
+        // ...
+    }
+}
+
+// Oder mit Facade
+public function __construct(private readonly EuripSsoFacade $sso) {}
+
+public function index(): Response
+{
+    $email = $this->sso->getEmail();
+    $isAdmin = $this->sso->hasRole('ROLE_ADMIN');
+
+    // Auf verschachtelte Services zugreifen
+    $userInfo = $this->sso->api()->getUserInfo();
+    $allClaims = $this->sso->claims()->all();
+}
+```
+
+### Authorization-Methoden
+
+```php
+// Check-Methoden (return bool)
+$auth->hasRole('ROLE_ADMIN');
+$auth->hasClientRole('editor');
+$auth->hasPermission('edit:article');
+$auth->hasAnyPermission(['edit:article', 'delete:article']);
+$auth->hasAllPermissions(['view:article', 'edit:article']);
+$auth->isInGroup('editors');
+$auth->canAccess();  // Nicht blockiert
+
+// Require-Methoden (werfen PermissionDeniedException)
+$auth->requireRole('ROLE_ADMIN');
+$auth->requirePermission('edit:article');
+$auth->requireAccess();
+```
+
+### Claims-Zugriff
+
+```php
+// Standard-Claims
+$claims->getEmail();
+$claims->getName();
+$claims->getUserId();  // Subject
+$claims->getLocale();
+
+// Client-spezifische Claims (EURIP SSO)
+$claims->getRoles();            // Globale Rollen
+$claims->getClientRoles();      // Client-spezifische Rollen
+$claims->getClientPermissions();
+$claims->getClientGroups();
+$claims->isBlocked();
+
+// Generischer Zugriff
+$claims->get('custom_claim', 'default');
+$claims->all();  // Alle Claims als Array
+```
+
 ## Konfigurationsreferenz
 
 ```yaml
@@ -190,6 +291,10 @@ eurip_sso:
         default_roles: [ROLE_USER]
         sync_on_login: true
         auto_create: true
+
+    client_services:
+        enabled: false
+        store_access_token: true
 ```
 
 ## Docker/Kubernetes (Dual-URL)

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Jostkleigrewe\Sso\Bundle\Controller;
 
 use Jostkleigrewe\Sso\Bundle\OidcConstants;
+use Jostkleigrewe\Sso\Bundle\Service\EuripSsoClaimsService;
+use Jostkleigrewe\Sso\Bundle\Service\EuripSsoTokenStorage;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,6 +21,8 @@ final class DiagnosticsController extends AbstractController
         private readonly OidcClient $oidcClient,
         /** @var list<string> */
         private readonly array $scopes = OidcConstants::DEFAULT_SCOPES,
+        private readonly ?EuripSsoClaimsService $claimsService = null,
+        private readonly ?EuripSsoTokenStorage $tokenStorage = null,
     ) {
     }
 
@@ -30,6 +34,9 @@ final class DiagnosticsController extends AbstractController
     {
         $config = $this->oidcClient->getConfig();
         $authData = $this->oidcClient->buildAuthorizationUrl($this->scopes);
+
+        // Collect client services info if available
+        $clientServicesData = $this->getClientServicesDebugData();
 
         return $this->render('@EuripSso/debug.html.twig', [
             'config' => [
@@ -46,7 +53,55 @@ final class DiagnosticsController extends AbstractController
             ],
             'auth_url_preview' => $authData['url'],
             'user' => $this->getUser(),
+            'client_services' => $clientServicesData,
         ]);
+    }
+
+    /**
+     * DE: Sammelt Debug-Daten für Client-Services.
+     * EN: Collects debug data for client services.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function getClientServicesDebugData(): ?array
+    {
+        if ($this->claimsService === null || $this->tokenStorage === null) {
+            return null;
+        }
+
+        $data = [
+            'enabled' => true,
+            'is_authenticated' => $this->claimsService->isAuthenticated(),
+            'tokens' => [
+                'has_id_token' => $this->tokenStorage->getIdToken() !== null,
+                'has_access_token' => $this->tokenStorage->getAccessToken() !== null,
+                'has_refresh_token' => $this->tokenStorage->getRefreshToken() !== null,
+                'access_token_valid' => $this->tokenStorage->hasValidAccessToken(),
+                'expires_at' => $this->tokenStorage->getExpiresAt()?->format('Y-m-d H:i:s'),
+            ],
+            'claims' => null,
+        ];
+
+        if ($this->claimsService->isAuthenticated()) {
+            $claims = $this->claimsService->getClaimsOrNull();
+            if ($claims !== null) {
+                $data['claims'] = [
+                    'subject' => $claims->getSubject(),
+                    'email' => $claims->getEmail(),
+                    'name' => $claims->getName(),
+                    'roles' => $claims->getRoles(),
+                    'client_roles' => $claims->getClientRoles(),
+                    'client_permissions' => $claims->getClientPermissions(),
+                    'client_groups' => $claims->getClientGroups(),
+                    'is_blocked' => $claims->isBlocked(),
+                    'issued_at' => $claims->getIssuedAt()?->format('Y-m-d H:i:s'),
+                    'expires_at' => $claims->getExpiresAt()?->format('Y-m-d H:i:s'),
+                    'all_claims' => $claims->all(),
+                ];
+            }
+        }
+
+        return $data;
     }
 
     /**
@@ -57,6 +112,9 @@ final class DiagnosticsController extends AbstractController
     {
         $user = $this->getUser();
         $config = $this->oidcClient->getConfig();
+
+        // Collect client services info if available
+        $clientServicesData = $this->getClientServicesDebugData();
 
         return $this->render('@EuripSso/test.html.twig', [
             'user' => $user,
@@ -104,6 +162,7 @@ final class DiagnosticsController extends AbstractController
                     'status' => $user !== null ? 'done' : 'waiting',
                 ],
             ],
+            'client_services' => $clientServicesData,
         ]);
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Jostkleigrewe\Sso\Bundle\Controller;
 
 use Jostkleigrewe\Sso\Bundle\OidcConstants;
+use Jostkleigrewe\Sso\Bundle\Service\EuripSsoTokenStorage;
 use Jostkleigrewe\Sso\Bundle\Service\OidcAuthenticationService;
 use Jostkleigrewe\Sso\Contracts\Exception\ClaimsValidationException;
 use Jostkleigrewe\Sso\Contracts\Exception\OidcProtocolException;
@@ -32,6 +33,7 @@ final class AuthenticationController extends AbstractController
         /** @var list<string> */
         private readonly array $scopes = OidcConstants::DEFAULT_SCOPES,
         private readonly string $firewallName = OidcConstants::DEFAULT_FIREWALL,
+        private readonly ?EuripSsoTokenStorage $ssoTokenStorage = null,
     ) {
     }
 
@@ -125,6 +127,11 @@ final class AuthenticationController extends AbstractController
             // Store ID token for SSO logout
             if ($idToken !== null) {
                 $session->set(OidcConstants::SESSION_ID_TOKEN, $idToken);
+            }
+
+            // Store all tokens for API client (if client_services enabled)
+            if ($this->ssoTokenStorage !== null) {
+                $this->ssoTokenStorage->storeTokens($successEvent->tokenResponse);
             }
 
             // Login user into Symfony security

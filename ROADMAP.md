@@ -566,3 +566,114 @@ Vertrauen in Releases, CI/CD-Pipeline komplett. ✅ Abgeschlossen
 
 Alle geplanten Phasen (1-12) wurden erfolgreich implementiert.
 Phase 13 (Maker Bundle) wurde als optional übersprungen.
+
+---
+
+## Zukünftige Verbesserungen (Optional)
+
+> Diese Features sind **nicht blockierend** für Production-Einsatz.
+> Sie können bei Bedarf implementiert werden.
+
+### Dokumentation
+
+#### D.1 Troubleshooting-Guide
+- [ ] Häufige Fehler und Lösungen dokumentieren
+  - "Invalid state" nach Login (Session/Cookie-Probleme)
+  - "Token signature verification failed" (JWKS-Cache)
+  - "Discovery URL nicht erreichbar" (Container-Networking)
+  - "User not found" nach Callback (Entity-Mapping)
+- **Aufwand:** 2h
+- **Priorität:** 🟡 Empfohlen
+
+#### D.2 Sequenzdiagramme
+- [ ] Mermaid-Diagramme für README
+  - Login-Flow (Browser → App → Bundle → IdP → zurück)
+  - Token Refresh Flow
+  - Logout Flow (mit/ohne SSO)
+- **Aufwand:** 1h
+- **Priorität:** 🟢 Nice-to-have
+
+### Testing
+
+#### T.1 E2E-Tests mit Mock-IdP
+- [ ] Integration Tests für kompletten Login-Flow
+  - Mock-IdP Server (WireMock oder eigener)
+  - Browser-Simulation via Symfony Test Client
+  - Verifizierung: User nach Login eingeloggt
+- **Aufwand:** 4h
+- **Priorität:** 🟡 Empfohlen
+
+#### T.2 Performance-Tests
+- [ ] Load Testing für Auth-Endpoints
+  - Callback-Endpoint unter Last
+  - Token-Exchange Latenz
+  - Memory-Verbrauch bei vielen Sessions
+- **Aufwand:** 4h
+- **Priorität:** 🔵 Bei Bedarf
+
+### Features
+
+#### F.1 Rate Limiting als Bundle-Feature
+- [ ] Built-in Rate Limiting statt App-Konfiguration
+  ```yaml
+  eurip_sso:
+      rate_limiting:
+          enabled: true
+          callback_limit: 10
+          callback_interval: 60
+  ```
+- [ ] Dependency: `symfony/rate-limiter`
+- **Aufwand:** 2h
+- **Priorität:** 🟢 Nice-to-have
+
+#### F.2 Token Refresh Event
+- [ ] `OidcTokenRefreshedEvent` für Audit-Logging
+  - Dispatched nach erfolgreichem Token Refresh
+  - Enthält: User, altes/neues Token, Timestamp
+  - Use Case: Audit-Log, externe API-Benachrichtigung
+- **Aufwand:** 1h
+- **Priorität:** 🔵 Bei Bedarf
+
+#### F.3 Backchannel Logout (OpenID Connect Back-Channel Logout 1.0)
+- [ ] Endpoint: `POST /auth/backchannel-logout`
+- [ ] Logout Token (JWT) validieren
+- [ ] User-Session invalidieren basierend auf `sub` Claim
+- [ ] Discovery: `backchannel_logout_supported`, `backchannel_logout_session_supported`
+- **Aufwand:** 4h
+- **Priorität:** 🟡 Für Enterprise/Compliance
+
+#### F.4 Device Code Flow (RFC 8628)
+- [ ] Für IoT/TV/CLI-Anwendungen ohne Browser
+- [ ] `POST /auth/device` → device_code, user_code
+- [ ] Polling am Token-Endpoint
+- **Aufwand:** 6h
+- **Priorität:** 🔵 Bei Bedarf
+
+#### F.5 Client Credentials Grant
+- [ ] Service-to-Service Authentication
+- [ ] Kein User-Kontext, nur Client
+- [ ] Für Backend-APIs
+- **Aufwand:** 3h
+- **Priorität:** 🔵 Bei Bedarf
+
+#### F.6 Token Introspection Client
+- [ ] Validierung von Tokens gegen IdP
+- [ ] Für Stateless Token-Validierung
+- [ ] Alternative zu lokaler JWT-Validierung
+- **Aufwand:** 2h
+- **Priorität:** 🔵 Bei Bedarf
+
+### Zusammenfassung Future Features
+
+| ID | Feature | Aufwand | Priorität | Status |
+|----|---------|---------|-----------|--------|
+| D.1 | Troubleshooting-Guide | 2h | 🟡 Empfohlen | 📋 |
+| D.2 | Sequenzdiagramme | 1h | 🟢 Nice-to-have | 📋 |
+| T.1 | E2E-Tests mit Mock-IdP | 4h | 🟡 Empfohlen | 📋 |
+| T.2 | Performance-Tests | 4h | 🔵 Bei Bedarf | 📋 |
+| F.1 | Rate Limiting built-in | 2h | 🟢 Nice-to-have | 📋 |
+| F.2 | Token Refresh Event | 1h | 🔵 Bei Bedarf | 📋 |
+| F.3 | Backchannel Logout | 4h | 🟡 Enterprise | 📋 |
+| F.4 | Device Code Flow | 6h | 🔵 Bei Bedarf | 📋 |
+| F.5 | Client Credentials | 3h | 🔵 Bei Bedarf | 📋 |
+| F.6 | Token Introspection | 2h | 🔵 Bei Bedarf | 📋 |

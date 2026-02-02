@@ -16,6 +16,9 @@ interface OidcConstants
     public const SESSION_VERIFIER = '_eurip_sso_verifier';
     public const SESSION_ID_TOKEN = '_eurip_sso_id_token';
     public const SESSION_RETURN_URL = '_eurip_sso_return_url';
+    public const SESSION_ACCESS_TOKEN = '_eurip_sso_access_token';
+    public const SESSION_REFRESH_TOKEN = '_eurip_sso_refresh_token';
+    public const SESSION_TOKEN_EXPIRES = '_eurip_sso_token_expires';
 
     // Event Names
     public const EVENT_PRE_LOGIN = 'eurip_sso.login.pre';
