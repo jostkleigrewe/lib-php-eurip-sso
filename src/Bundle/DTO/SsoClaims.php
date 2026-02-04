@@ -203,7 +203,7 @@ final readonly class SsoClaims
      */
     public function isBlocked(): bool
     {
-        return $this->getBool('blocked', false);
+        return $this->getBool('is_blocked', false);
     }
 
     // =========================================================================

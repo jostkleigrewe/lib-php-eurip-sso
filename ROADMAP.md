@@ -569,6 +569,22 @@ Phase 13 (Maker Bundle) wurde als optional übersprungen.
 
 ---
 
+## 🟢 Bugfixes: Provider-Kompatibilität ✅ ABGESCHLOSSEN
+
+> Ziel: Claims-Namen an EURIP SSO Provider anpassen
+
+### B.1 `blocked` → `is_blocked` umbenennen ✅
+- [x] `SsoClaims.php:206`: `getBool('blocked', false)` → `getBool('is_blocked', false)`
+- [ ] README: Claims-Dokumentation aktualisieren (optional)
+- **Hintergrund:** Provider liefert `is_blocked`, Bundle erwartet `blocked`
+- **Betroffene Dateien:**
+  - `src/Bundle/DTO/SsoClaims.php`
+- **Aufwand:** 5 min
+- **Priorität:** 🔴 KRITISCH (Breaking für bestehende Integrationen)
+- **Erledigt:** 2026-02-04
+
+---
+
 ## Zukünftige Verbesserungen (Optional)
 
 > Diese Features sind **nicht blockierend** für Production-Einsatz.
