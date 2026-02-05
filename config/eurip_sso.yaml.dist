@@ -1,0 +1,209 @@
+# EURIP SSO Bundle - Example Configuration
+# Copy this file to your Symfony app: config/packages/eurip_sso.yaml
+#
+# DE: Beispiel-Konfiguration für das EURIP SSO Bundle.
+# EN: Example configuration for the EURIP SSO Bundle.
+#
+# Required environment variables:
+#   SSO_ISSUER_URL   - OIDC Provider URL (e.g., https://sso.example.com)
+#   OIDC_CLIENT_ID   - Your OIDC client ID
+#   APP_URL          - Your application's public URL
+
+eurip_sso:
+    # ============================================================
+    # REQUIRED - These must be set for the bundle to work
+    # ============================================================
+
+    # OIDC Issuer URL (internal URL for server-to-server communication)
+    issuer: '%env(SSO_ISSUER_URL)%'
+
+    # Client ID registered with the OIDC provider
+    client_id: '%env(OIDC_CLIENT_ID)%'
+
+    # Callback URL (must match the registered redirect URI)
+    redirect_uri: '%env(APP_URL)%/auth/callback'
+
+    # ============================================================
+    # OPTIONAL - Connection & Protocol Settings
+    # ============================================================
+
+    # Client secret (only needed for confidential clients)
+    # client_secret: '%env(OIDC_CLIENT_SECRET)%'
+
+    # Public issuer URL for browser redirects (Docker/K8s environments)
+    # Use when internal issuer URL differs from public URL
+    # public_issuer: 'https://sso.example.com'
+
+    # Scopes to request from the OIDC provider
+    scopes:
+        - openid
+        - profile
+        - email
+
+    # ============================================================
+    # CACHE - Discovery document caching
+    # ============================================================
+
+    cache:
+        enabled: true
+        ttl: 3600           # Cache TTL in seconds (1 hour)
+        pool: cache.app     # Symfony cache pool to use
+
+    # ============================================================
+    # AUTHENTICATOR - Legacy settings for custom implementations
+    # ============================================================
+
+    # These settings are used when building your own controller.
+    # When using controller.enabled: true, use the 'routes' section instead.
+    authenticator:
+        callback_route: /auth/callback
+        default_target_path: /
+        login_path: /login
+        verify_signature: true   # SECURITY: Always keep this enabled!
+
+    # ============================================================
+    # CONTROLLER - Zero-Code Integration
+    # ============================================================
+
+    # Enable bundle-provided authentication controller
+    controller:
+        enabled: true
+
+    # Route paths for the authentication flow
+    routes:
+        login: /auth/login          # Start SSO login
+        callback: /auth/callback    # OIDC callback endpoint
+        logout: /auth/logout        # Logout endpoint
+        after_login: /              # Redirect after successful login
+        after_logout: /             # Redirect after logout
+
+        # Optional routes (set to enable)
+        profile: /auth/profile      # User profile page
+        debug: /auth/debug          # OIDC configuration debug page
+        # test: /auth/test          # Auth workflow test page (dev only!)
+
+    # ============================================================
+    # USER PROVIDER - Automatic User Provisioning
+    # ============================================================
+
+    user_provider:
+        enabled: true
+
+        # Your User entity class
+        entity: App\Entity\User
+
+        # Map OIDC claims to entity properties
+        mapping:
+            # Required: OIDC identifiers
+            subject: oidcSubject      # Property for OIDC subject (unique user ID)
+            issuer: oidcIssuer        # Property for OIDC issuer
+
+            # Optional: Additional fields to map
+            email: email              # Property for email
+            roles: roles              # Property for local app roles
+            external_roles: externalRoles  # Property for SSO roles
+
+        # Sync additional claims to entity properties
+        # Format: 'claim_name': 'entityProperty'
+        claims_sync:
+            # name: displayName
+            # locale: preferredLanguage
+            # picture: avatarUrl
+
+        # Claim name that contains user roles
+        roles_claim: roles
+
+        # Default roles for new users
+        default_roles:
+            - ROLE_USER
+
+        # Sync SSO data on every login
+        sync_on_login: true
+
+        # Auto-create users on first login
+        auto_create: true
+
+    # ============================================================
+    # CLIENT SERVICES - Runtime Access to SSO Data
+    # ============================================================
+
+    # Enable services for accessing claims, permissions, and API
+    client_services:
+        enabled: true
+        store_access_token: true   # Store access token for API calls
+
+# ================================================================
+# SECURITY.YAML - Required Configuration
+# ================================================================
+#
+# Add this to your config/packages/security.yaml:
+#
+# security:
+#     providers:
+#         app_user_provider:
+#             id: Jostkleigrewe\Sso\Bundle\Security\DoctrineOidcUserProvider
+#
+#     firewalls:
+#         main:
+#             lazy: true
+#             provider: app_user_provider
+#             # The bundle handles authentication via session
+#             custom_authenticator: App\Security\NoopAuthenticator
+#
+# ================================================================
+# ROUTES.YAML - Import Bundle Routes
+# ================================================================
+#
+# Add this to your config/routes.yaml:
+#
+# eurip_sso:
+#     resource: '@EuripSsoBundle/config/routes.yaml'
+#
+# Or if using route loader (automatic when controller.enabled: true):
+#
+# eurip_sso:
+#     resource: .
+#     type: eurip_sso
+#
+# ================================================================
+# USER ENTITY - Required Interface
+# ================================================================
+#
+# Your User entity must implement OidcUserInterface or have the mapped properties:
+#
+# class User implements UserInterface
+# {
+#     #[ORM\Column(length: 255, nullable: true)]
+#     private ?string $oidcSubject = null;
+#
+#     #[ORM\Column(length: 255, nullable: true)]
+#     private ?string $oidcIssuer = null;
+#
+#     // ... getters and setters
+# }
+#
+# ================================================================
+# EVENTS - Customize the Auth Flow
+# ================================================================
+#
+# Available events:
+#   - OidcPreLoginEvent       Before IdP redirect
+#   - OidcLoginSuccessEvent   After successful login
+#   - OidcLoginFailureEvent   On authentication error
+#   - OidcUserCreatedEvent    New user created
+#   - OidcUserUpdatedEvent    Existing user updated
+#   - OidcPreLogoutEvent      Before logout
+#   - OidcTokenRefreshedEvent After token refresh
+#
+# Example listener:
+#
+# #[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
+# class AddAdminRoleListener
+# {
+#     public function __invoke(OidcLoginSuccessEvent $event): void
+#     {
+#         if (in_array('admin', $event->claims['groups'] ?? [])) {
+#             $event->addRole('ROLE_ADMIN');
+#         }
+#     }
+# }

@@ -211,7 +211,9 @@ App braucht keinen Provisioning-Handler mehr. ✅ Abgeschlossen
   - DoctrineOidcUserProvider wraps entity in OidcUser automatisch
   - Implementiert UserProviderInterface für Symfony Security Integration
 
-- [ ] **4.4** Dokumentation: Wann eigene User-Klasse nötig
+- [x] **4.4** Dokumentation: Wann eigene User-Klasse nötig
+  - README: "User Strategy: Bundle vs. Custom Entity" Abschnitt
+  - Entscheidungsmatrix, Hybrid-Rollen, Code-Beispiele
 
 ### Ergebnis
 App kann optionale Bundle-User-Klasse verwenden. ✅ Abgeschlossen
@@ -275,7 +277,10 @@ App kann optionale Bundle-User-Klasse verwenden. ✅ Abgeschlossen
   - [x] `OidcLoginSuccessEvent` - Rollen modifizieren, Redirect-Ziel ändern, Login blockieren
   - [x] `OidcLoginFailureEvent` - Custom Response für Error Handling
 
-- [ ] **6.3** Dokumentation: Event-basierte Erweiterung
+- [x] **6.3** Dokumentation: Event-basierte Erweiterung
+  - README: "Extending via Events" Abschnitt mit Event-Übersicht
+  - 7 praktische Beispiele für häufige Use-Cases
+  - Event-Flow Diagramm (Login + Logout)
 
 ### Events Übersicht
 
@@ -657,6 +662,45 @@ Phase 13 (Maker Bundle) wurde als optional übersprungen.
 - [ ] Discovery: `backchannel_logout_supported`, `backchannel_logout_session_supported`
 - **Aufwand:** 4h
 - **Priorität:** 🟡 Für Enterprise/Compliance
+- **Provider-Status:** ✅ Implementiert (2026-02-04)
+
+#### F.7 Session Management (OpenID Connect Session Management 1.0)
+- [ ] `session_state` aus Authorization Response speichern
+- [ ] JavaScript-Komponente für Hidden Iframe (`check_session_iframe`)
+- [ ] postMessage-basiertes Polling alle X Sekunden
+- [ ] Event: `OidcSessionChangedEvent` wenn Session geändert
+- [ ] Konfigurierbare Polling-Interval
+- [ ] Optionale Auto-Logout bei "changed" Response
+  ```yaml
+  eurip_sso:
+      session_management:
+          enabled: true
+          polling_interval: 5000  # ms
+          auto_logout: false
+  ```
+- **Aufwand:** 4-6h
+- **Priorität:** 🟢 Nice-to-have
+- **Provider-Status:** ✅ Implementiert (2026-02-05)
+  - `/oidc/check-session` Endpoint
+  - `session_state` in Authorization Response
+  - `check_session_iframe` im Discovery Document
+
+#### F.8 Front-Channel Logout (OpenID Connect Front-Channel Logout 1.0)
+- [ ] Endpoint: `GET /auth/frontchannel-logout` (Logout via Iframe)
+- [ ] Query-Parameter: `iss`, `sid` (optional)
+- [ ] Lokale Session invalidieren
+- [ ] HTML-Response für Iframe (kein Redirect)
+  ```yaml
+  eurip_sso:
+      frontchannel_logout:
+          enabled: true
+          route: /auth/frontchannel-logout
+  ```
+- **Aufwand:** 2h
+- **Priorität:** 🟢 Nice-to-have
+- **Provider-Status:** ✅ Implementiert (2026-02-04)
+  - Hidden Iframes auf Logout-Completion-Seite
+  - `frontchannel_logout_supported` im Discovery Document
 
 #### F.4 Device Code Flow (RFC 8628)
 - [ ] Für IoT/TV/CLI-Anwendungen ohne Browser
@@ -693,3 +737,5 @@ Phase 13 (Maker Bundle) wurde als optional übersprungen.
 | F.4 | Device Code Flow | 6h | 🔵 Bei Bedarf | 📋 |
 | F.5 | Client Credentials | 3h | 🔵 Bei Bedarf | 📋 |
 | F.6 | Token Introspection | 2h | 🔵 Bei Bedarf | 📋 |
+| F.7 | Session Management | 4-6h | 🟢 Nice-to-have | 📋 |
+| F.8 | Front-Channel Logout | 2h | 🟢 Nice-to-have | 📋 |

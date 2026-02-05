@@ -12,8 +12,9 @@ OIDC Client Library and Symfony Bundle for Single Sign-On.
 - Dual-URL Support (internal/public issuer for Docker/K8s)
 - Automatic User Provisioning with Doctrine
 - Hybrid User Strategy (sync SSO data, preserve local data)
-- Extensive Event System (6 events)
+- Extensive Event System (7 events)
 - PSR-3 Logging, PSR-18 HTTP Client
+- **Security**: JWT signature verification, timing-safe comparisons, open redirect protection
 
 ## Requirements
 
@@ -90,18 +91,25 @@ security:
 - `/auth/profile` - User profile
 - `/auth/debug` - OIDC config
 
-## Events
+## Extending via Events
 
-| Event | When | Purpose |
-|-------|------|---------|
-| `OidcPreLoginEvent` | Before IdP redirect | Modify scopes, cancel |
-| `OidcLoginSuccessEvent` | After login | Modify roles, redirect |
-| `OidcLoginFailureEvent` | On error | Custom error response |
-| `OidcUserCreatedEvent` | New user | Modify before persist |
-| `OidcUserUpdatedEvent` | User updated | Modify before flush |
-| `OidcPreLogoutEvent` | Before logout | Skip SSO logout |
+The bundle dispatches events at key points in the authentication flow, allowing customization without modifying bundle code.
 
-### Example: Add Role Based on Claims
+### Event Overview
+
+| Event | When | Available Methods |
+|-------|------|-------------------|
+| `OidcPreLoginEvent` | Before IdP redirect | `setScopes()`, `setResponse()` |
+| `OidcLoginSuccessEvent` | After successful login | `addRole()`, `removeRole()`, `setTargetPath()`, `setResponse()` |
+| `OidcLoginFailureEvent` | On authentication error | `setResponse()` |
+| `OidcUserCreatedEvent` | New user created | Access `$entity`, `$claims` |
+| `OidcUserUpdatedEvent` | Existing user synced | Access `$entity`, `$claims` |
+| `OidcPreLogoutEvent` | Before logout | `skipSsoLogout()`, `setResponse()` |
+| `OidcTokenRefreshedEvent` | After token refresh | Access `$tokenResponse` |
+
+### Common Use Cases
+
+#### Add Roles Based on Claims
 
 ```php
 #[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
@@ -109,12 +117,234 @@ class AddAdminRoleListener
 {
     public function __invoke(OidcLoginSuccessEvent $event): void
     {
-        if (in_array('admin', $event->claims['groups'] ?? [])) {
+        // Add ROLE_ADMIN if user is in 'admins' group
+        if (in_array('admins', $event->claims['groups'] ?? [])) {
             $event->addRole('ROLE_ADMIN');
         }
     }
 }
 ```
+
+#### Block Users Based on Claims
+
+```php
+#[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
+class BlockInactiveUserListener
+{
+    public function __invoke(OidcLoginSuccessEvent $event): void
+    {
+        if ($event->claims['is_blocked'] ?? false) {
+            $event->setResponse(new Response('Account blocked', 403));
+        }
+    }
+}
+```
+
+#### Custom Redirect After Login
+
+```php
+#[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
+class RedirectNewUserListener
+{
+    public function __invoke(OidcLoginSuccessEvent $event): void
+    {
+        // Redirect first-time users to onboarding
+        if (empty($event->claims['profile_complete'])) {
+            $event->setTargetPath('/onboarding');
+        }
+    }
+}
+```
+
+#### Send Welcome Email
+
+```php
+#[AsEventListener(event: OidcUserCreatedEvent::NAME)]
+class WelcomeEmailListener
+{
+    public function __construct(private MailerInterface $mailer) {}
+
+    public function __invoke(OidcUserCreatedEvent $event): void
+    {
+        $email = $event->claims['email'] ?? null;
+        if ($email) {
+            // Queue welcome email (entity not yet flushed!)
+            $this->mailer->send(new WelcomeEmail($email));
+        }
+    }
+}
+```
+
+#### Request Additional Scopes
+
+```php
+#[AsEventListener(event: OidcPreLoginEvent::NAME)]
+class AddScopesListener
+{
+    public function __invoke(OidcPreLoginEvent $event): void
+    {
+        $scopes = $event->getScopes();
+        $scopes[] = 'custom:permissions';
+        $event->setScopes($scopes);
+    }
+}
+```
+
+#### Skip SSO Logout (Local Only)
+
+```php
+#[AsEventListener(event: OidcPreLogoutEvent::NAME)]
+class LocalLogoutOnlyListener
+{
+    public function __invoke(OidcPreLogoutEvent $event): void
+    {
+        // Only invalidate local session, don't redirect to SSO logout
+        $event->skipSsoLogout();
+    }
+}
+```
+
+#### Custom Error Page
+
+```php
+#[AsEventListener(event: OidcLoginFailureEvent::NAME)]
+class CustomErrorPageListener
+{
+    public function __construct(private Environment $twig) {}
+
+    public function __invoke(OidcLoginFailureEvent $event): void
+    {
+        $html = $this->twig->render('auth/error.html.twig', [
+            'error' => $event->error,
+            'description' => $event->errorDescription,
+        ]);
+        $event->setResponse(new Response($html, 401));
+    }
+}
+```
+
+### Event Flow Diagram
+
+```
+Login Flow:
+  ┌─────────────────┐
+  │ OidcPreLoginEvent │ → Can modify scopes or abort
+  └────────┬────────┘
+           ↓
+  [Redirect to IdP]
+           ↓
+  [User authenticates]
+           ↓
+  [Callback received]
+           ↓
+  ┌─────────────────────┐
+  │ OidcUserCreatedEvent │ → Only for new users (before flush)
+  │   OR                 │
+  │ OidcUserUpdatedEvent │ → For existing users (before flush)
+  └────────┬─────────────┘
+           ↓
+  ┌──────────────────────┐
+  │ OidcLoginSuccessEvent │ → Modify roles, redirect, or block
+  └────────┬─────────────┘
+           ↓
+  [User logged in]
+
+Logout Flow:
+  ┌──────────────────┐
+  │ OidcPreLogoutEvent │ → Can skip SSO logout or abort
+  └────────┬─────────┘
+           ↓
+  [Session invalidated]
+           ↓
+  [Redirect to SSO logout or after_logout path]
+```
+
+## User Strategy: Bundle vs. Custom Entity
+
+The bundle provides `OidcUser`, a generic user class. Depending on your use case, you can use it directly or provide your own Doctrine entity.
+
+### When to Use Bundle's OidcUser (No Custom Entity)
+
+Use the built-in `OidcUser` class when:
+
+- **Stateless/API-only** - No local user data needed
+- **Simple apps** - Just need authentication, no user management
+- **Microservices** - User data lives in another service
+
+```yaml
+eurip_sso:
+    user_provider:
+        enabled: false  # Don't use Doctrine provider
+```
+
+The `OidcUser` is created from claims on each login - no database required.
+
+### When You Need a Custom Entity
+
+Create your own User entity when you need:
+
+| Requirement | Example |
+|-------------|---------|
+| **Local data** | User preferences, settings, avatar |
+| **Local roles** | ROLE_ADMIN assigned manually in app |
+| **Relations** | User has Orders, Posts, Comments |
+| **User management** | Admin panel to list/edit users |
+| **Audit trail** | Track user activity in your database |
+
+```php
+// src/Entity/User.php
+#[ORM\Entity]
+class User implements UserInterface
+{
+    #[ORM\Column(length: 255)]
+    private ?string $oidcSubject = null;
+
+    #[ORM\Column(length: 255)]
+    private ?string $oidcIssuer = null;
+
+    // Local data (not synced from SSO)
+    #[ORM\Column(type: 'json')]
+    private array $roles = ['ROLE_USER'];
+
+    // SSO data (synced on each login)
+    #[ORM\Column(type: 'json')]
+    private array $externalRoles = [];
+
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $email = null;
+
+    // App-specific fields
+    #[ORM\Column(type: 'json', nullable: true)]
+    private ?array $preferences = null;
+
+    // ... getters/setters
+}
+```
+
+### Hybrid Role Strategy
+
+When both `roles` and `external_roles` are mapped, roles are **merged**:
+
+```yaml
+user_provider:
+    mapping:
+        roles: roles              # Local roles (preserved)
+        external_roles: externalRoles  # SSO roles (synced)
+```
+
+- **Local roles**: Set manually in your app (e.g., ROLE_ADMIN)
+- **External roles**: Synced from SSO on each login
+- **Effective roles**: Union of both (local + external)
+
+### Decision Matrix
+
+| Scenario | Solution |
+|----------|----------|
+| API gateway, no local state | `OidcUser` (no entity) |
+| Simple web app, just login | `OidcUser` with `user_provider.enabled: true` |
+| Need local preferences | Custom entity |
+| Need local + SSO roles | Custom entity with hybrid mapping |
+| Full user management | Custom entity implementing `UserInterface` |
 
 ## Client Services
 
@@ -236,6 +466,13 @@ eurip_sso:
         ttl: 3600
         pool: cache.app
 
+    # Legacy authenticator (for custom controller implementations)
+    authenticator:
+        callback_route: /auth/callback
+        default_target_path: /
+        login_path: /login
+        verify_signature: true       # JWT signature verification (recommended!)
+
     controller:
         enabled: false
 
@@ -253,13 +490,13 @@ eurip_sso:
         enabled: false
         entity: null
         mapping:
-            subject: oidcSubject
-            issuer: oidcIssuer
-            email: email
-            roles: roles
-            external_roles: externalRoles
-        claims_sync: {}
-        roles_claim: roles
+            subject: oidcSubject     # Required: OIDC subject identifier
+            issuer: oidcIssuer       # Required: OIDC issuer
+            email: null              # Optional: email field
+            roles: null              # Optional: local roles field
+            external_roles: null     # Optional: SSO roles field
+        claims_sync: {}              # Additional claim-to-field mapping
+        roles_claim: roles           # Claim name for roles
         default_roles: [ROLE_USER]
         sync_on_login: true
         auto_create: true
@@ -268,6 +505,8 @@ eurip_sso:
         enabled: false
         store_access_token: true
 ```
+
+See `config/eurip_sso.yaml.dist` for a complete example configuration.
 
 ## Standalone Usage
 
