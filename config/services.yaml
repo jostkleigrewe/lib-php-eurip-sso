@@ -16,3 +16,7 @@ services:
             $cacheTtl: '%eurip_sso.cache.ttl%'
         tags:
             - { name: console.command }
+
+    Jostkleigrewe\Sso\Bundle\Command\OidcTestConnectionCommand:
+        tags:
+            - { name: console.command }

@@ -20,6 +20,7 @@ use Jostkleigrewe\Sso\Bundle\Service\EuripSsoClaimsService;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoFacade;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoTokenStorage;
 use Jostkleigrewe\Sso\Bundle\Service\OidcAuthenticationService;
+use Jostkleigrewe\Sso\Bundle\Twig\EuripSsoTwigExtension;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
@@ -340,8 +341,22 @@ final class EuripSsoBundle extends AbstractBundle
 
         // Profile Controller (optional)
         if ($config['routes']['profile'] !== null) {
-            $services->set(ProfileController::class)
-                ->arg('$loginPath', $config['routes']['login'])
+            $profileDef = $services->set(ProfileController::class)
+                ->arg('$loginPath', $config['routes']['login']);
+
+            // DE: Client-Services injizieren, wenn aktiviert
+            // EN: Inject client services if enabled
+            if ($config['client_services']['enabled']) {
+                $profileDef
+                    ->arg('$claimsService', new Reference(EuripSsoClaimsService::class))
+                    ->arg('$tokenStorage', new Reference(EuripSsoTokenStorage::class));
+            } else {
+                $profileDef
+                    ->arg('$claimsService', null)
+                    ->arg('$tokenStorage', null);
+            }
+
+            $profileDef
                 ->autowire()
                 ->autoconfigure()
                 ->tag('controller.service_arguments')
@@ -472,6 +487,16 @@ final class EuripSsoBundle extends AbstractBundle
             ->arg('$authorizationService', new Reference(EuripSsoAuthorizationService::class))
             ->arg('$apiClient', new Reference(EuripSsoApiClient::class))
             ->arg('$tokenStorage', new Reference(EuripSsoTokenStorage::class));
+
+        // Twig Extension (provides sso_* functions in templates)
+        // DE: Nur registrieren wenn Twig verfügbar ist
+        // EN: Only register if Twig is available
+        if (class_exists(\Twig\Extension\AbstractExtension::class)) {
+            $services->set(EuripSsoTwigExtension::class)
+                ->arg('$facade', new Reference(EuripSsoFacade::class))
+                ->arg('$claimsService', new Reference(EuripSsoClaimsService::class))
+                ->tag('twig.extension');
+        }
 
         // Create aliases for easier injection
         $services->alias('eurip_sso.token_storage', EuripSsoTokenStorage::class)->public();

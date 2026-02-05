@@ -113,12 +113,18 @@ final readonly class SsoClaims
     /**
      * DE: Audience (Client ID).
      * EN: Audience (client ID).
+     *
+     * @return string|list<string>|null
      */
     public function getAudience(): string|array|null
     {
         $aud = $this->claims['aud'] ?? null;
-        if (is_string($aud) || is_array($aud)) {
+        if (is_string($aud)) {
             return $aud;
+        }
+        if (is_array($aud)) {
+            /** @var list<string> */
+            return array_values($aud);
         }
         return null;
     }
