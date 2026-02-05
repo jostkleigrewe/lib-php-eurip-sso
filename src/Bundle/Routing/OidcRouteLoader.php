@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Jostkleigrewe\Sso\Bundle\Routing;
 
 use Jostkleigrewe\Sso\Bundle\Controller\AuthenticationController;
+use Jostkleigrewe\Sso\Bundle\Controller\BackchannelLogoutController;
 use Jostkleigrewe\Sso\Bundle\Controller\DiagnosticsController;
+use Jostkleigrewe\Sso\Bundle\Controller\FrontchannelLogoutController;
 use Jostkleigrewe\Sso\Bundle\Controller\ProfileController;
 use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Symfony\Component\Config\Loader\Loader;
@@ -17,6 +19,7 @@ use Symfony\Component\Routing\RouteCollection;
  * EN: Dynamically loads OIDC routes from bundle configuration.
  *
  * Routes: eurip_sso_login, eurip_sso_callback, eurip_sso_logout,
+ *         eurip_sso_backchannel_logout (opt), eurip_sso_frontchannel_logout (opt),
  *         eurip_sso_profile (opt), eurip_sso_debug (opt), eurip_sso_test (opt)
  */
 final class OidcRouteLoader extends Loader
@@ -24,13 +27,19 @@ final class OidcRouteLoader extends Loader
     private bool $isLoaded = false;
 
     /**
-     * @param array{profile: string|null, debug: string|null, test: string|null} $optionalRoutes
+     * @param array{profile: string|null, debug: string|null, test: string|null, backchannel_logout: string|null, frontchannel_logout: string|null} $optionalRoutes
      */
     public function __construct(
         private readonly string $loginPath,
         private readonly string $callbackPath,
         private readonly string $logoutPath,
-        private readonly array $optionalRoutes = ['profile' => null, 'debug' => null, 'test' => null],
+        private readonly array $optionalRoutes = [
+            'profile' => null,
+            'debug' => null,
+            'test' => null,
+            'backchannel_logout' => null,
+            'frontchannel_logout' => null,
+        ],
         ?string $env = null,
     ) {
         parent::__construct($env);
@@ -85,6 +94,24 @@ final class OidcRouteLoader extends Loader
             $routes->add(OidcConstants::ROUTE_TEST, new Route(
                 path: $this->optionalRoutes['test'],
                 defaults: ['_controller' => DiagnosticsController::class . '::test'],
+                methods: ['GET'],
+            ));
+        }
+
+        // Optional Routes - Back-Channel Logout (OpenID Connect Back-Channel Logout 1.0)
+        if (($this->optionalRoutes['backchannel_logout'] ?? null) !== null) {
+            $routes->add(OidcConstants::ROUTE_BACKCHANNEL_LOGOUT, new Route(
+                path: $this->optionalRoutes['backchannel_logout'],
+                defaults: ['_controller' => BackchannelLogoutController::class . '::backchannelLogout'],
+                methods: ['POST'],
+            ));
+        }
+
+        // Optional Routes - Front-Channel Logout (OpenID Connect Front-Channel Logout 1.0)
+        if (($this->optionalRoutes['frontchannel_logout'] ?? null) !== null) {
+            $routes->add(OidcConstants::ROUTE_FRONTCHANNEL_LOGOUT, new Route(
+                path: $this->optionalRoutes['frontchannel_logout'],
+                defaults: ['_controller' => FrontchannelLogoutController::class . '::frontchannelLogout'],
                 methods: ['GET'],
             ));
         }

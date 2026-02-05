@@ -106,6 +106,8 @@ The bundle dispatches events at key points in the authentication flow, allowing 
 | `OidcUserUpdatedEvent` | Existing user synced | Access `$entity`, `$claims` |
 | `OidcPreLogoutEvent` | Before logout | `skipSsoLogout()`, `setResponse()` |
 | `OidcTokenRefreshedEvent` | After token refresh | Access `$tokenResponse` |
+| `OidcBackchannelLogoutEvent` | Back-channel logout received | Access `$subject`, `$sessionId`, `$claims`, `markHandled()` |
+| `OidcFrontchannelLogoutEvent` | Front-channel logout received | Access `$issuer`, `$sessionId`, `markHandled()` |
 
 ### Common Use Cases
 
@@ -485,6 +487,9 @@ eurip_sso:
         profile: null
         debug: null
         test: null
+        # OpenID Connect Logout Extensions
+        backchannel_logout: null    # POST endpoint for back-channel logout
+        frontchannel_logout: null   # GET endpoint for front-channel logout (iframe)
 
     user_provider:
         enabled: false
@@ -528,6 +533,16 @@ $tokens = $client->exchangeCode($code, $authData['code_verifier']);
 $claims = $client->decodeIdToken($tokens->idToken);
 $client->validateClaims($claims, $authData['nonce']);
 ```
+
+## Troubleshooting
+
+Having issues? Check the [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for common problems and solutions:
+
+- Invalid state after login
+- Token signature verification failed
+- Discovery URL not reachable
+- User not found after callback
+- Session not persisted
 
 ## License
 

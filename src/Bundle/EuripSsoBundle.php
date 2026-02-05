@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Jostkleigrewe\Sso\Bundle;
 
 use Jostkleigrewe\Sso\Bundle\Controller\AuthenticationController;
+use Jostkleigrewe\Sso\Bundle\Controller\BackchannelLogoutController;
 use Jostkleigrewe\Sso\Bundle\Controller\DiagnosticsController;
+use Jostkleigrewe\Sso\Bundle\Controller\FrontchannelLogoutController;
 use Jostkleigrewe\Sso\Bundle\Controller\ProfileController;
 use Jostkleigrewe\Sso\Bundle\Factory\OidcClientFactory;
 use Jostkleigrewe\Sso\Bundle\Routing\OidcRouteLoader;
@@ -117,6 +119,16 @@ final class EuripSsoBundle extends AbstractBundle
                         ->scalarNode('profile')->defaultNull()->end()
                         ->scalarNode('debug')->defaultNull()->end()
                         ->scalarNode('test')->defaultNull()->end()
+                        // DE: OpenID Connect Logout Extensions
+                        // EN: OpenID Connect Logout Extensions
+                        ->scalarNode('backchannel_logout')
+                            ->defaultNull()
+                            ->info('Back-Channel Logout endpoint (POST)')
+                        ->end()
+                        ->scalarNode('frontchannel_logout')
+                            ->defaultNull()
+                            ->info('Front-Channel Logout endpoint (GET, iframe)')
+                        ->end()
                     ->end()
                 ->end()
 
@@ -201,7 +213,9 @@ final class EuripSsoBundle extends AbstractBundle
             ->set('eurip_sso.routes.after_logout', $config['routes']['after_logout'])
             ->set('eurip_sso.routes.profile', $config['routes']['profile'])
             ->set('eurip_sso.routes.debug', $config['routes']['debug'])
-            ->set('eurip_sso.routes.test', $config['routes']['test']);
+            ->set('eurip_sso.routes.test', $config['routes']['test'])
+            ->set('eurip_sso.routes.backchannel_logout', $config['routes']['backchannel_logout'])
+            ->set('eurip_sso.routes.frontchannel_logout', $config['routes']['frontchannel_logout']);
 
         // Load base services
         $container->import('../../config/services.yaml');
@@ -293,6 +307,8 @@ final class EuripSsoBundle extends AbstractBundle
                 'profile' => $config['routes']['profile'],
                 'debug' => $config['routes']['debug'],
                 'test' => $config['routes']['test'],
+                'backchannel_logout' => $config['routes']['backchannel_logout'],
+                'frontchannel_logout' => $config['routes']['frontchannel_logout'],
             ])
             ->tag('routing.loader');
 
@@ -350,6 +366,31 @@ final class EuripSsoBundle extends AbstractBundle
             }
 
             $diagnosticsDef
+                ->autowire()
+                ->autoconfigure()
+                ->tag('controller.service_arguments')
+                ->public();
+        }
+
+        // Back-Channel Logout Controller (optional, OpenID Connect Back-Channel Logout 1.0)
+        if ($config['routes']['backchannel_logout'] !== null) {
+            $services->set(BackchannelLogoutController::class)
+                ->arg('$oidcClient', new Reference(OidcClient::class))
+                ->arg('$eventDispatcher', new Reference('event_dispatcher'))
+                ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE))
+                ->autowire()
+                ->autoconfigure()
+                ->tag('controller.service_arguments')
+                ->public();
+        }
+
+        // Front-Channel Logout Controller (optional, OpenID Connect Front-Channel Logout 1.0)
+        if ($config['routes']['frontchannel_logout'] !== null) {
+            $services->set(FrontchannelLogoutController::class)
+                ->arg('$oidcClient', new Reference(OidcClient::class))
+                ->arg('$tokenStorage', new Reference('security.token_storage'))
+                ->arg('$eventDispatcher', new Reference('event_dispatcher'))
+                ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE))
                 ->autowire()
                 ->autoconfigure()
                 ->tag('controller.service_arguments')

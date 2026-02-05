@@ -30,3 +30,7 @@ composer.lock
 # OS
 .DS_Store
 Thumbs.db
+
+# Roadmap (project-specific, not versioned)
+ROADMAP.md
+ROADMAP-ARCHIV.md

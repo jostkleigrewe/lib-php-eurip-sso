@@ -25,6 +25,8 @@ interface OidcConstants
     public const EVENT_LOGIN_SUCCESS = 'eurip_sso.login.success';
     public const EVENT_LOGIN_FAILURE = 'eurip_sso.login.failure';
     public const EVENT_PRE_LOGOUT = 'eurip_sso.logout.pre';
+    public const EVENT_BACKCHANNEL_LOGOUT = 'eurip_sso.logout.backchannel';
+    public const EVENT_FRONTCHANNEL_LOGOUT = 'eurip_sso.logout.frontchannel';
     public const EVENT_USER_CREATED = 'eurip_sso.user.created';
     public const EVENT_USER_UPDATED = 'eurip_sso.user.updated';
     public const EVENT_TOKEN_REFRESHED = 'eurip_sso.token.refreshed';
@@ -33,6 +35,8 @@ interface OidcConstants
     public const ROUTE_LOGIN = 'eurip_sso_login';
     public const ROUTE_CALLBACK = 'eurip_sso_callback';
     public const ROUTE_LOGOUT = 'eurip_sso_logout';
+    public const ROUTE_BACKCHANNEL_LOGOUT = 'eurip_sso_backchannel_logout';
+    public const ROUTE_FRONTCHANNEL_LOGOUT = 'eurip_sso_frontchannel_logout';
     public const ROUTE_PROFILE = 'eurip_sso_profile';
     public const ROUTE_DEBUG = 'eurip_sso_debug';
     public const ROUTE_TEST = 'eurip_sso_test';
