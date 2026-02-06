@@ -449,20 +449,21 @@ final class OidcClient
     }
 
     /**
+     * DE: Sucht einen passenden Key aus dem JWKS (PHP 8.4 array_find).
+     * EN: Finds a matching key from the JWKS (PHP 8.4 array_find).
+     *
      * @param array<string, mixed> $jwks
      * @return array<string, mixed>|null
      */
     private function findKey(array $jwks, ?string $kid): ?array
     {
-        foreach ($jwks['keys'] as $key) {
-            if ($kid === null || ($key['kid'] ?? null) === $kid) {
-                if (($key['use'] ?? 'sig') === 'sig' && ($key['kty'] ?? null) === 'RSA') {
-                    return $key;
-                }
-            }
-        }
-
-        return null;
+        return array_find(
+            $jwks['keys'],
+            fn (array $key): bool =>
+                ($kid === null || ($key['kid'] ?? null) === $kid)
+                && ($key['use'] ?? 'sig') === 'sig'
+                && ($key['kty'] ?? null) === 'RSA',
+        );
     }
 
     /**
