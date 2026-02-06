@@ -12,7 +12,7 @@ OIDC Client Library and Symfony Bundle for Single Sign-On.
 - Dual-URL Support (internal/public issuer for Docker/K8s)
 - Automatic User Provisioning with Doctrine
 - Hybrid User Strategy (sync SSO data, preserve local data)
-- Extensive Event System (7 events)
+- Extensive Event System (9 events)
 - PSR-3 Logging, PSR-18 HTTP Client
 - **Security**: JWT signature verification, timing-safe comparisons, open redirect protection
 
@@ -511,7 +511,7 @@ eurip_sso:
         store_access_token: true
 ```
 
-See `config/eurip_sso.yaml.dist` for a complete example configuration.
+See [docs/example-config.yaml](docs/example-config.yaml) for a complete example configuration.
 
 ## Standalone Usage
 

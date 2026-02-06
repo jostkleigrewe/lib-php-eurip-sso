@@ -82,6 +82,10 @@ eurip_sso:
         debug: /auth/debug          # OIDC configuration debug page
         # test: /auth/test          # Auth workflow test page (dev only!)
 
+        # OpenID Connect Logout Extensions
+        # backchannel_logout: /auth/backchannel-logout   # POST endpoint
+        # frontchannel_logout: /auth/frontchannel-logout # GET endpoint (iframe)
+
     # ============================================================
     # USER PROVIDER - Automatic User Provisioning
     # ============================================================
@@ -186,14 +190,16 @@ eurip_sso:
 # EVENTS - Customize the Auth Flow
 # ================================================================
 #
-# Available events:
-#   - OidcPreLoginEvent       Before IdP redirect
-#   - OidcLoginSuccessEvent   After successful login
-#   - OidcLoginFailureEvent   On authentication error
-#   - OidcUserCreatedEvent    New user created
-#   - OidcUserUpdatedEvent    Existing user updated
-#   - OidcPreLogoutEvent      Before logout
-#   - OidcTokenRefreshedEvent After token refresh
+# Available events (9 total):
+#   - OidcPreLoginEvent            Before IdP redirect
+#   - OidcLoginSuccessEvent        After successful login
+#   - OidcLoginFailureEvent        On authentication error
+#   - OidcUserCreatedEvent         New user created
+#   - OidcUserUpdatedEvent         Existing user updated
+#   - OidcPreLogoutEvent           Before logout
+#   - OidcTokenRefreshedEvent      After token refresh
+#   - OidcBackchannelLogoutEvent   Back-channel logout received
+#   - OidcFrontchannelLogoutEvent  Front-channel logout received
 #
 # Example listener:
 #

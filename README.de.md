@@ -12,7 +12,7 @@ OIDC Client Library und Symfony Bundle für Single Sign-On.
 - Dual-URL Support (interne/öffentliche Issuer-URL für Docker/K8s)
 - Automatische User-Provisionierung mit Doctrine
 - Hybrid User Strategy (SSO-Daten synchronisieren, lokale Daten behalten)
-- Umfangreiches Event-System (7 Events)
+- Umfangreiches Event-System (9 Events)
 - PSR-3 Logging, PSR-18 HTTP Client
 - **Sicherheit**: JWT-Signaturprüfung, timing-safe Vergleiche, Open-Redirect-Schutz
 
@@ -118,6 +118,8 @@ Das Bundle dispatcht Events an wichtigen Stellen im Authentifizierungs-Flow und 
 | `OidcUserUpdatedEvent` | User synchronisiert | Zugriff auf `$entity`, `$claims` |
 | `OidcPreLogoutEvent` | Vor Logout | `skipSsoLogout()`, `setResponse()` |
 | `OidcTokenRefreshedEvent` | Nach Token-Refresh | Zugriff auf `$tokenResponse` |
+| `OidcBackchannelLogoutEvent` | Back-Channel Logout empfangen | Zugriff auf `$subject`, `$sessionId`, `$claims`, `markHandled()` |
+| `OidcFrontchannelLogoutEvent` | Front-Channel Logout empfangen | Zugriff auf `$issuer`, `$sessionId`, `markHandled()` |
 
 ### Häufige Anwendungsfälle
 
@@ -497,6 +499,9 @@ eurip_sso:
         profile: null
         debug: null
         test: null
+        # OpenID Connect Logout Extensions
+        backchannel_logout: null    # POST-Endpoint für Back-Channel Logout
+        frontchannel_logout: null   # GET-Endpoint für Front-Channel Logout (iframe)
 
     user_provider:
         enabled: false
@@ -518,7 +523,7 @@ eurip_sso:
         store_access_token: true
 ```
 
-Siehe `config/eurip_sso.yaml.dist` für eine vollständige Beispielkonfiguration.
+Siehe [docs/example-config.yaml](docs/example-config.yaml) für eine vollständige Beispielkonfiguration.
 
 ## Docker/Kubernetes (Dual-URL)
 
@@ -580,6 +585,16 @@ $tokens = $client->exchangeCode($code, $authData['code_verifier']);
 $claims = $client->decodeIdToken($tokens->idToken);
 $client->validateClaims($claims, $authData['nonce']);
 ```
+
+## Troubleshooting
+
+Probleme bei der Integration? Siehe [Troubleshooting Guide](docs/TROUBLESHOOTING.md) für häufige Probleme und Lösungen:
+
+- Invalid State nach Login
+- Token Signature Verification Failed
+- Discovery URL nicht erreichbar
+- User not found nach Callback
+- Session wird nicht gespeichert
 
 ## Lizenz
 
