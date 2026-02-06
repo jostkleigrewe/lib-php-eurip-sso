@@ -2,8 +2,6 @@
 
 OIDC Client Library and Symfony Bundle for Single Sign-On.
 
-🇩🇪 [Deutsche Version](README.de.md)
-
 ## Features
 
 - **Zero-Code Integration** - Complete OIDC auth via configuration only
