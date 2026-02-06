@@ -155,13 +155,7 @@ final class OidcClient
 
         $this->logger->info('Token exchange successful');
 
-        return new TokenResponse(
-            accessToken: $response['access_token'],
-            idToken: $response['id_token'] ?? null,
-            refreshToken: $response['refresh_token'] ?? null,
-            expiresIn: (int) ($response['expires_in'] ?? 3600),
-            tokenType: $response['token_type'] ?? 'Bearer',
-        );
+        return TokenResponse::fromArray($response);
     }
 
     /**
@@ -200,13 +194,7 @@ final class OidcClient
 
         $this->logger->info('Token refresh successful');
 
-        return new TokenResponse(
-            accessToken: $response['access_token'],
-            idToken: $response['id_token'] ?? null,
-            refreshToken: $response['refresh_token'] ?? null,
-            expiresIn: (int) ($response['expires_in'] ?? 3600),
-            tokenType: $response['token_type'] ?? 'Bearer',
-        );
+        return TokenResponse::fromArray($response);
     }
 
     /**
@@ -240,11 +228,7 @@ final class OidcClient
 
         $this->logger->debug('UserInfo fetched successfully', ['sub' => $data['sub']]);
 
-        return new UserInfoResponse(
-            sub: $data['sub'],
-            email: $data['email'] ?? null,
-            name: $data['name'] ?? null,
-        );
+        return UserInfoResponse::fromArray($data);
     }
 
     /**

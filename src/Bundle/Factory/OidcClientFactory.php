@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Jostkleigrewe\Sso\Bundle\Factory;
 
 use Jostkleigrewe\Sso\Client\OidcClient;
+use Jostkleigrewe\Sso\Contracts\DTO\DiscoveryDocument;
 use Jostkleigrewe\Sso\Contracts\Exception\OidcProtocolException;
 use Jostkleigrewe\Sso\Contracts\Oidc\OidcClientConfig;
 use Psr\Http\Client\ClientInterface;
@@ -21,6 +22,7 @@ use Symfony\Contracts\Cache\ItemInterface;
 final class OidcClientFactory
 {
     private const CACHE_TTL = 3600; // 1 hour
+    private const CACHE_VERSION = 'v1'; // DE: Bei Breaking Changes hochzählen // EN: Increment on breaking changes
 
     /**
      * @throws OidcProtocolException
@@ -77,7 +79,7 @@ final class OidcClientFactory
             return $fetchDiscovery();
         }
 
-        $cacheKey = 'eurip_sso.discovery.' . hash('xxh3', $issuer);
+        $cacheKey = sprintf('eurip_sso.discovery.%s.%s', self::CACHE_VERSION, hash('xxh3', $issuer));
 
         /** @var OidcClientConfig */
         return $cache->get($cacheKey, static function (ItemInterface $item) use ($fetchDiscovery, $cacheTtl): OidcClientConfig {
@@ -114,60 +116,98 @@ final class OidcClientFactory
             throw new OidcProtocolException('Discovery request failed: ' . $response->getStatusCode());
         }
 
-        $discovery = json_decode((string) $response->getBody(), true);
+        $body = (string) $response->getBody();
+        $data = json_decode($body, true);
 
-        if (!is_array($discovery)) {
-            throw new OidcProtocolException('Invalid discovery document');
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $logger?->error('Invalid JSON in discovery document', [
+                'error' => json_last_error_msg(),
+                'body_preview' => substr($body, 0, 200),
+            ]);
+            throw new OidcProtocolException('Invalid JSON in discovery document: ' . json_last_error_msg());
         }
 
+        if (!is_array($data)) {
+            throw new OidcProtocolException('Discovery document must be a JSON object');
+        }
+
+        // DE: Discovery-Dokument als DTO parsen (inkl. Validierung)
+        // EN: Parse discovery document as DTO (incl. validation)
+        $discovery = DiscoveryDocument::fromArray($data);
+
         $logger?->info('OIDC discovery document fetched successfully', [
-            'issuer' => $discovery['issuer'] ?? $issuer,
+            'issuer' => $discovery->issuer,
         ]);
 
-        // Get endpoints from discovery
-        $authorizationEndpoint = $discovery['authorization_endpoint']
-            ?? throw new OidcProtocolException('Missing authorization_endpoint');
-        $tokenEndpoint = $discovery['token_endpoint']
-            ?? throw new OidcProtocolException('Missing token_endpoint');
-        $jwksUri = $discovery['jwks_uri'] ?? '';
-        $userInfoEndpoint = $discovery['userinfo_endpoint'] ?? '';
-        $endSessionEndpoint = $discovery['end_session_endpoint'] ?? null;
+        // DE: Endpoints aus DTO extrahieren
+        // EN: Extract endpoints from DTO
+        $authorizationEndpoint = $discovery->authorizationEndpoint;
+        $tokenEndpoint = $discovery->tokenEndpoint;
+        $jwksUri = $discovery->jwksUri ?? '';
+        $userinfoEndpoint = $discovery->userinfoEndpoint ?? '';
+        $endSessionEndpoint = $discovery->endSessionEndpoint;
+        $revocationEndpoint = $discovery->revocationEndpoint;
+        $introspectionEndpoint = $discovery->introspectionEndpoint;
 
-        // Handle dual-URL setup (internal issuer for server-to-server, public issuer for browser)
+        // DE: Dual-URL-Setup (interner Issuer für Server-to-Server, public Issuer für Browser)
+        // EN: Handle dual-URL setup (internal issuer for server-to-server, public issuer for browser)
         // Discovery document may contain public URLs, we need to:
         // - Keep public URLs for browser-facing endpoints (authorization, end_session)
         // - Use internal URLs for server-to-server endpoints (token, userinfo, jwks)
         if ($publicIssuer !== null) {
             $internalIssuerNormalized = rtrim($issuer, '/');
             $publicIssuerNormalized = rtrim($publicIssuer, '/');
-            $discoveryIssuer = rtrim($discovery['issuer'] ?? $issuer, '/');
+            $discoveryIssuer = rtrim($discovery->issuer, '/');
 
-            // If discovery issuer matches public issuer, replace with internal for server endpoints
+            // DE: Discovery-Issuer entspricht public Issuer → Server-Endpoints auf internal umschreiben
+            // EN: Discovery issuer matches public issuer → rewrite server endpoints to internal
             if ($discoveryIssuer === $publicIssuerNormalized) {
-                $tokenEndpoint = str_replace($publicIssuerNormalized, $internalIssuerNormalized, $tokenEndpoint);
-                $userInfoEndpoint = str_replace($publicIssuerNormalized, $internalIssuerNormalized, $userInfoEndpoint);
-                $jwksUri = str_replace($publicIssuerNormalized, $internalIssuerNormalized, $jwksUri);
+                $tokenEndpoint = self::replaceIssuerInUrl($tokenEndpoint, $publicIssuerNormalized, $internalIssuerNormalized);
+                $userinfoEndpoint = self::replaceIssuerInUrl($userinfoEndpoint, $publicIssuerNormalized, $internalIssuerNormalized);
+                $jwksUri = self::replaceIssuerInUrl($jwksUri, $publicIssuerNormalized, $internalIssuerNormalized);
+                if ($revocationEndpoint !== null) {
+                    $revocationEndpoint = self::replaceIssuerInUrl($revocationEndpoint, $publicIssuerNormalized, $internalIssuerNormalized);
+                }
+                if ($introspectionEndpoint !== null) {
+                    $introspectionEndpoint = self::replaceIssuerInUrl($introspectionEndpoint, $publicIssuerNormalized, $internalIssuerNormalized);
+                }
             }
-            // If discovery issuer matches internal issuer, replace with public for browser endpoints
+            // DE: Discovery-Issuer entspricht internal Issuer → Browser-Endpoints auf public umschreiben
+            // EN: Discovery issuer matches internal issuer → rewrite browser endpoints to public
             elseif ($discoveryIssuer === $internalIssuerNormalized) {
-                $authorizationEndpoint = str_replace($internalIssuerNormalized, $publicIssuerNormalized, $authorizationEndpoint);
+                $authorizationEndpoint = self::replaceIssuerInUrl($authorizationEndpoint, $internalIssuerNormalized, $publicIssuerNormalized);
                 if ($endSessionEndpoint !== null) {
-                    $endSessionEndpoint = str_replace($internalIssuerNormalized, $publicIssuerNormalized, $endSessionEndpoint);
+                    $endSessionEndpoint = self::replaceIssuerInUrl($endSessionEndpoint, $internalIssuerNormalized, $publicIssuerNormalized);
                 }
             }
         }
 
         return new OidcClientConfig(
             clientId: $clientId,
-            issuer: $discovery['issuer'] ?? $issuer,
+            issuer: $discovery->issuer,
             authorizationEndpoint: $authorizationEndpoint,
             tokenEndpoint: $tokenEndpoint,
             jwksUri: $jwksUri,
             redirectUri: $redirectUri,
-            userInfoEndpoint: $userInfoEndpoint,
+            userInfoEndpoint: $userinfoEndpoint,
             endSessionEndpoint: $endSessionEndpoint,
             clientSecret: $clientSecret,
             publicIssuer: $publicIssuer,
+            revocationEndpoint: $revocationEndpoint,
+            introspectionEndpoint: $introspectionEndpoint,
         );
+    }
+
+    /**
+     * DE: Ersetzt den Issuer-Teil einer URL sicher (nur am Anfang).
+     * EN: Safely replaces the issuer part of a URL (only at the beginning).
+     */
+    private static function replaceIssuerInUrl(string $url, string $from, string $to): string
+    {
+        if ($url === '' || !str_starts_with($url, $from)) {
+            return $url;
+        }
+
+        return $to . substr($url, strlen($from));
     }
 }
