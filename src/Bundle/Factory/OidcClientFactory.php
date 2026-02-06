@@ -90,6 +90,33 @@ final class OidcClientFactory
     }
 
     /**
+     * DE: Prüft ob eine URL HTTPS verwendet (oder ein erlaubtes Dev-Schema).
+     * EN: Checks if a URL uses HTTPS (or an allowed dev scheme).
+     */
+    private static function isSecureUrl(string $url): bool
+    {
+        if (str_starts_with($url, 'https://')) {
+            return true;
+        }
+
+        // DE: Erlaubte Development-URLs // EN: Allowed development URLs
+        $devPrefixes = [
+            'http://localhost',
+            'http://127.0.0.1',
+            'http://[::1]',
+            'http://host.docker.internal',
+        ];
+
+        foreach ($devPrefixes as $prefix) {
+            if (str_starts_with($url, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @throws OidcProtocolException
      */
     private static function fetchDiscovery(
@@ -102,6 +129,13 @@ final class OidcClientFactory
         RequestFactoryInterface $requestFactory,
         ?LoggerInterface $logger,
     ): OidcClientConfig {
+        // DE: HTTPS-Validierung für Issuer // EN: HTTPS validation for issuer
+        if (!self::isSecureUrl($issuer)) {
+            $logger?->warning('Insecure issuer URL detected - HTTPS is required in production', [
+                'issuer' => $issuer,
+            ]);
+        }
+
         $discoveryUrl = rtrim($issuer, '/') . '/.well-known/openid-configuration';
 
         $logger?->debug('Fetching OIDC discovery document', ['url' => $discoveryUrl]);
@@ -148,6 +182,23 @@ final class OidcClientFactory
         $endSessionEndpoint = $discovery->endSessionEndpoint;
         $revocationEndpoint = $discovery->revocationEndpoint;
         $introspectionEndpoint = $discovery->introspectionEndpoint;
+
+        // DE: HTTPS-Validierung für kritische Server-to-Server Endpoints
+        // EN: HTTPS validation for critical server-to-server endpoints
+        $criticalEndpoints = [
+            'token_endpoint' => $tokenEndpoint,
+            'jwks_uri' => $jwksUri,
+            'userinfo_endpoint' => $userinfoEndpoint,
+        ];
+
+        foreach ($criticalEndpoints as $name => $url) {
+            if ($url !== '' && !self::isSecureUrl($url)) {
+                $logger?->warning('Insecure endpoint detected - HTTPS is required in production', [
+                    'endpoint' => $name,
+                    'url' => $url,
+                ]);
+            }
+        }
 
         // DE: Dual-URL-Setup (interner Issuer für Server-to-Server, public Issuer für Browser)
         // EN: Handle dual-URL setup (internal issuer for server-to-server, public issuer for browser)

@@ -22,10 +22,13 @@ use Psr\Log\NullLogger;
  */
 final class OidcClient
 {
-    private const CLOCK_SKEW_SECONDS = 60;
+    private const CLOCK_SKEW_SECONDS = 30;
+    private const JWKS_CACHE_TTL_SECONDS = 3600; // DE: 1 Stunde // EN: 1 hour
 
     /** @var array<string, mixed>|null */
     private ?array $jwksCache = null;
+
+    private ?int $jwksCacheTimestamp = null;
 
     private LoggerInterface $logger;
 
@@ -122,9 +125,18 @@ final class OidcClient
      * EN: Exchanges authorization code for tokens.
      *
      * @throws TokenExchangeFailedException
+     * @throws \InvalidArgumentException wenn code oder codeVerifier leer ist
      */
     public function exchangeCode(string $code, string $codeVerifier): TokenResponse
     {
+        // DE: Eingabevalidierung // EN: Input validation
+        if ($code === '') {
+            throw new \InvalidArgumentException('Authorization code must not be empty');
+        }
+        if ($codeVerifier === '') {
+            throw new \InvalidArgumentException('Code verifier must not be empty');
+        }
+
         $this->logger->debug('Exchanging authorization code for tokens');
 
         $params = [
@@ -376,6 +388,7 @@ final class OidcClient
             throw new \InvalidArgumentException('Invalid JWKS format: missing keys array');
         }
         $this->jwksCache = $jwks;
+        $this->jwksCacheTimestamp = time();
         $this->logger->debug('JWKS preloaded', ['keys_count' => count($jwks['keys'])]);
     }
 
@@ -401,11 +414,33 @@ final class OidcClient
     }
 
     /**
+     * DE: Invalidiert den JWKS-Cache (erzwingt erneuten Abruf).
+     * EN: Invalidates the JWKS cache (forces re-fetch).
+     */
+    public function invalidateJwksCache(): void
+    {
+        $this->jwksCache = null;
+        $this->jwksCacheTimestamp = null;
+        $this->logger->debug('JWKS cache invalidated');
+    }
+
+    /**
      * @return array<string, mixed>
      * @throws OidcProtocolException
      */
     private function fetchJwks(): array
     {
+        // DE: Cache-Invalidierung nach TTL // EN: Cache invalidation after TTL
+        if ($this->jwksCache !== null && $this->jwksCacheTimestamp !== null) {
+            if (time() > $this->jwksCacheTimestamp + self::JWKS_CACHE_TTL_SECONDS) {
+                $this->logger->debug('JWKS cache expired, refetching');
+                $this->jwksCache = null;
+                $this->jwksCacheTimestamp = null;
+            } else {
+                return $this->jwksCache;
+            }
+        }
+
         if ($this->jwksCache !== null) {
             return $this->jwksCache;
         }
@@ -428,6 +463,7 @@ final class OidcClient
         }
 
         $this->jwksCache = $data;
+        $this->jwksCacheTimestamp = time();
 
         return $data;
     }
@@ -541,13 +577,29 @@ final class OidcClient
         return rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
     }
 
+    /**
+     * DE: Dekodiert Base64URL-kodierten String.
+     * EN: Decodes Base64URL-encoded string.
+     *
+     * @throws OidcProtocolException wenn Dekodierung fehlschlägt
+     */
     private function base64UrlDecode(string $input): string
     {
+        if ($input === '') {
+            throw new OidcProtocolException('Base64URL decode failed: empty input');
+        }
+
         $remainder = strlen($input) % 4;
         if ($remainder) {
             $input .= str_repeat('=', 4 - $remainder);
         }
 
-        return base64_decode(strtr($input, '-_', '+/'), true) ?: '';
+        $decoded = base64_decode(strtr($input, '-_', '+/'), true);
+
+        if ($decoded === false) {
+            throw new OidcProtocolException('Base64URL decode failed: invalid encoding');
+        }
+
+        return $decoded;
     }
 }
