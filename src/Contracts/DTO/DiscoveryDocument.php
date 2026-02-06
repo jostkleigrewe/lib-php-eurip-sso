@@ -125,6 +125,18 @@ final readonly class DiscoveryDocument
          * EN: Supports frontchannel logout (OPTIONAL).
          */
         public bool $frontchannelLogoutSupported = false,
+
+        // ========== Session Management (OpenID Connect Session Management 1.0) ==========
+
+        /**
+         * DE: URL zum Check-Session Iframe (OPTIONAL).
+         *     Für Session Management via postMessage.
+         * EN: URL to check-session iframe (OPTIONAL).
+         *     For session management via postMessage.
+         *
+         * @see https://openid.net/specs/openid-connect-session-1_0.html
+         */
+        public ?string $checkSessionIframe = null,
     ) {
     }
 
@@ -169,6 +181,7 @@ final readonly class DiscoveryDocument
             codeChallengeMethodsSupported: self::getStringArray($data, 'code_challenge_methods_supported'),
             backchannelLogoutSupported: (bool) ($data['backchannel_logout_supported'] ?? false),
             frontchannelLogoutSupported: (bool) ($data['frontchannel_logout_supported'] ?? false),
+            checkSessionIframe: self::getStringOrNull($data, 'check_session_iframe'),
         );
     }
 
@@ -206,6 +219,15 @@ final readonly class DiscoveryDocument
         // DE: Leeres Array = keine Info, Scope könnte unterstützt sein
         // EN: Empty array = no info, scope might be supported
         return $this->scopesSupported === [] || in_array($scope, $this->scopesSupported, true);
+    }
+
+    /**
+     * DE: Prüft ob Session Management unterstützt wird.
+     * EN: Checks if session management is supported.
+     */
+    public function supportsSessionManagement(): bool
+    {
+        return $this->checkSessionIframe !== null;
     }
 
     /**
