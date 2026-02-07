@@ -22,6 +22,11 @@ Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - `profile.html.twig` - Changed broken GET link to `<twig:EuripSso:Logout />` component
+- `logout_confirm.html.twig` - Fixed Open Redirect vulnerability (referer header validation)
+
+### Security
+
+- Cancel-URL on logout confirmation page now validated against open redirect attacks
 
 ### Files Added
 

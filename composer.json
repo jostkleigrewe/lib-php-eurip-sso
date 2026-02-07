@@ -29,6 +29,7 @@
         "symfony/framework-bundle": "Required for Symfony bundle integration",
         "symfony/security-bundle": "Required for security authenticator",
         "symfony/cache": "Required for discovery caching",
+        "symfony/ux-twig-component": "Required for EuripSso:Logout Twig component",
         "doctrine/orm": "Required for DoctrineOidcUserProvider",
         "symfony/property-access": "Required for DoctrineOidcUserProvider",
         "guzzlehttp/guzzle": "HTTP client implementation",

@@ -46,7 +46,10 @@ final class Logout
     public bool $asLink = false;
 
     /**
-     * DE: Optionale Bestätigungsmeldung (JavaScript confirm) // EN: Optional confirmation message
+     * DE: Optionale Bestätigungsmeldung (JavaScript confirm).
+     *     User-Input wird automatisch escaped.
+     * EN: Optional confirmation message (JavaScript confirm).
+     *     User input is automatically escaped.
      */
     public ?string $confirm = null;
 
@@ -59,6 +62,8 @@ final class Logout
     /**
      * DE: Generiert das CSRF-Token für den Logout.
      * EN: Generates the CSRF token for logout.
+     *
+     * @api
      */
     public function getCsrfToken(): string
     {
@@ -70,6 +75,8 @@ final class Logout
     /**
      * DE: Gibt die Logout-URL zurück.
      * EN: Returns the logout URL.
+     *
+     * @api
      */
     public function getLogoutUrl(): string
     {

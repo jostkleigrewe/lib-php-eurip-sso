@@ -266,16 +266,25 @@ final class AuthenticationController extends AbstractController
      * EN: Shows a logout confirmation page (GET).
      *     Allows simple links instead of POST forms.
      */
-    public function logoutConfirm(): Response
+    public function logoutConfirm(Request $request): Response
     {
         // DE: Nicht eingeloggt? Direkt zur Startseite
         // EN: Not logged in? Redirect to home
-        if ($this->getUser() === null) {
+        $user = $this->getUser();
+        if ($user === null) {
             return $this->redirect($this->afterLogoutPath);
         }
 
+        // DE: Cancel-URL validieren (Open Redirect Prevention)
+        // EN: Validate cancel URL (open redirect prevention)
+        $referer = $request->headers->get('referer');
+        $cancelUrl = ($referer !== null && $this->isValidReturnUrl(parse_url($referer, PHP_URL_PATH) ?? ''))
+            ? $referer
+            : $this->defaultTargetPath;
+
         return $this->render('@EuripSso/logout_confirm.html.twig', [
-            'user' => $this->getUser(),
+            'user' => $user,
+            'cancel_url' => $cancelUrl,
         ]);
     }
 
@@ -316,7 +325,7 @@ final class AuthenticationController extends AbstractController
             return new RedirectResponse($logoutUrl);
         }
 
-        $this->addFlash('success', $this->translator->trans('eurip_sso.flash.logout_success', [], 'eurip_sso'));
+        $this->addFlash('success', $this->translator->trans('eurip_sso.flash.logout_success', [], OidcConstants::TRANSLATION_DOMAIN));
         return $this->redirect($this->afterLogoutPath);
     }
 
@@ -351,7 +360,7 @@ final class AuthenticationController extends AbstractController
         return $this->translator->trans(
             $error->getTranslationKey(),
             [],
-            'eurip_sso',
+            OidcConstants::TRANSLATION_DOMAIN,
         );
     }
 }

@@ -22,7 +22,7 @@
 
     <div class="actions">
         <twig:EuripSso:Logout label="{{ 'eurip_sso.logout.button'|trans({}, 'eurip_sso')|default('Yes, log me out') }}" class="btn btn-danger" />
-        <a href="{{ app.request.headers.get('referer') ?: path('eurip_sso_profile') }}" class="btn btn-outline">
+        <a href="{{ cancel_url }}" class="btn btn-outline">
             {{ 'eurip_sso.logout.cancel'|trans({}, 'eurip_sso')|default('Cancel') }}
         </a>
     </div>

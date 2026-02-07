@@ -50,4 +50,7 @@ interface OidcConstants
 
     // CSRF Token Intentions
     public const CSRF_LOGOUT_INTENTION = 'eurip_sso_logout';
+
+    // Translation Domain
+    public const TRANSLATION_DOMAIN = 'eurip_sso';
 }
