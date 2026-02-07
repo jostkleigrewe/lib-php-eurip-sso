@@ -5,8 +5,3 @@ parameters:
     excludePaths:
         analyseAndScan:
             - src/Resources (?)
-    # DE: Symfony Serializer Attributes werden zur Laufzeit aufgelöst
-    # EN: Symfony Serializer attributes are resolved at runtime
-    ignoreErrors:
-        - '#Attribute class Symfony\\Component\\Serializer\\Attribute\\SerializedName does not exist#'
-        - '#Attribute class Symfony\\Component\\Serializer\\Attribute\\Ignore does not exist#'
