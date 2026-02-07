@@ -19,15 +19,16 @@ use Symfony\Component\Routing\RouteCollection;
  * EN: Dynamically loads OIDC routes from bundle configuration.
  *
  * Routes: eurip_sso_login, eurip_sso_callback, eurip_sso_logout,
- *         eurip_sso_backchannel_logout (opt), eurip_sso_frontchannel_logout (opt),
- *         eurip_sso_profile (opt), eurip_sso_debug (opt), eurip_sso_test (opt)
+ *         eurip_sso_logout_confirm (opt), eurip_sso_backchannel_logout (opt),
+ *         eurip_sso_frontchannel_logout (opt), eurip_sso_profile (opt),
+ *         eurip_sso_debug (opt), eurip_sso_test (opt)
  */
 final class OidcRouteLoader extends Loader
 {
     private bool $isLoaded = false;
 
     /**
-     * @param array{profile: string|null, debug: string|null, test: string|null, backchannel_logout: string|null, frontchannel_logout: string|null} $optionalRoutes
+     * @param array{profile: string|null, debug: string|null, test: string|null, logout_confirm: string|null, backchannel_logout: string|null, frontchannel_logout: string|null} $optionalRoutes
      */
     public function __construct(
         private readonly string $loginPath,
@@ -37,6 +38,7 @@ final class OidcRouteLoader extends Loader
             'profile' => null,
             'debug' => null,
             'test' => null,
+            'logout_confirm' => null,
             'backchannel_logout' => null,
             'frontchannel_logout' => null,
         ],
@@ -73,6 +75,17 @@ final class OidcRouteLoader extends Loader
             defaults: ['_controller' => AuthenticationController::class . '::logout'],
             methods: ['POST'],
         ));
+
+        // Optional: Logout Bestätigungsseite (GET)
+        // DE: Zeigt eine Bestätigungsseite mit POST-Button für sicheren Logout
+        // EN: Shows a confirmation page with POST button for secure logout
+        if (($this->optionalRoutes['logout_confirm'] ?? null) !== null) {
+            $routes->add(OidcConstants::ROUTE_LOGOUT_CONFIRM, new Route(
+                path: $this->optionalRoutes['logout_confirm'],
+                defaults: ['_controller' => AuthenticationController::class . '::logoutConfirm'],
+                methods: ['GET'],
+            ));
+        }
 
         // Optional Routes - Profile
         if (($this->optionalRoutes['profile'] ?? null) !== null) {

@@ -261,6 +261,25 @@ final class AuthenticationController extends AbstractController
     }
 
     /**
+     * DE: Zeigt eine Bestätigungsseite für den Logout (GET).
+     *     Ermöglicht einfache Links statt POST-Forms.
+     * EN: Shows a logout confirmation page (GET).
+     *     Allows simple links instead of POST forms.
+     */
+    public function logoutConfirm(): Response
+    {
+        // DE: Nicht eingeloggt? Direkt zur Startseite
+        // EN: Not logged in? Redirect to home
+        if ($this->getUser() === null) {
+            return $this->redirect($this->afterLogoutPath);
+        }
+
+        return $this->render('@EuripSso/logout_confirm.html.twig', [
+            'user' => $this->getUser(),
+        ]);
+    }
+
+    /**
      * DE: Führt den Logout durch (nur POST mit CSRF-Token).
      * EN: Performs logout (POST only with CSRF token).
      */

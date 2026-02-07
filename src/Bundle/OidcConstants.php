@@ -35,6 +35,7 @@ interface OidcConstants
     public const ROUTE_LOGIN = 'eurip_sso_login';
     public const ROUTE_CALLBACK = 'eurip_sso_callback';
     public const ROUTE_LOGOUT = 'eurip_sso_logout';
+    public const ROUTE_LOGOUT_CONFIRM = 'eurip_sso_logout_confirm';
     public const ROUTE_BACKCHANNEL_LOGOUT = 'eurip_sso_backchannel_logout';
     public const ROUTE_FRONTCHANNEL_LOGOUT = 'eurip_sso_frontchannel_logout';
     public const ROUTE_PROFILE = 'eurip_sso_profile';

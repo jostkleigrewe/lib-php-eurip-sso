@@ -1,0 +1,54 @@
+{% extends '@EuripSso/layout.html.twig' %}
+
+{% block title %}Logout - EURIP SSO{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h1 class="card-title">Logout</h1>
+        <p class="card-subtitle">{{ 'eurip_sso.logout.confirm_subtitle'|trans({}, 'eurip_sso')|default('Are you sure you want to log out?') }}</p>
+    </div>
+
+    <div class="logout-info">
+        <p>{{ 'eurip_sso.logout.confirm_message'|trans({}, 'eurip_sso')|default('You are currently logged in as:') }}</p>
+        <p class="user-identifier">
+            {% if user.email is defined and user.email %}
+                {{ user.email }}
+            {% else %}
+                {{ user.userIdentifier }}
+            {% endif %}
+        </p>
+    </div>
+
+    <div class="actions">
+        <twig:EuripSso:Logout label="{{ 'eurip_sso.logout.button'|trans({}, 'eurip_sso')|default('Yes, log me out') }}" class="btn btn-danger" />
+        <a href="{{ app.request.headers.get('referer') ?: path('eurip_sso_profile') }}" class="btn btn-outline">
+            {{ 'eurip_sso.logout.cancel'|trans({}, 'eurip_sso')|default('Cancel') }}
+        </a>
+    </div>
+</div>
+
+<style>
+    .logout-info {
+        text-align: center;
+        padding: 24px 16px;
+    }
+    .logout-info p {
+        margin: 0 0 8px;
+        color: #666;
+    }
+    .user-identifier {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #333;
+        word-break: break-all;
+    }
+    .actions {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        padding: 16px;
+        border-top: 1px solid #eee;
+    }
+</style>
+{% endblock %}

@@ -20,6 +20,7 @@ use Jostkleigrewe\Sso\Bundle\Service\EuripSsoClaimsService;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoFacade;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoTokenStorage;
 use Jostkleigrewe\Sso\Bundle\Service\OidcAuthenticationService;
+use Jostkleigrewe\Sso\Bundle\Twig\Components\Logout as LogoutComponent;
 use Jostkleigrewe\Sso\Bundle\Twig\EuripSsoTwigExtension;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Psr\Http\Client\ClientInterface;
@@ -119,6 +120,10 @@ final class EuripSsoBundle extends AbstractBundle
                         ->scalarNode('login')->defaultValue('/auth/login')->end()
                         ->scalarNode('callback')->defaultValue('/auth/callback')->end()
                         ->scalarNode('logout')->defaultValue('/auth/logout')->end()
+                        ->scalarNode('logout_confirm')
+                            ->defaultNull()
+                            ->info('GET endpoint for logout confirmation page (optional)')
+                        ->end()
                         ->scalarNode('after_login')->defaultValue('/')->end()
                         ->scalarNode('after_logout')->defaultValue('/')->end()
                         ->scalarNode('profile')->defaultNull()->end()
@@ -214,6 +219,7 @@ final class EuripSsoBundle extends AbstractBundle
             ->set('eurip_sso.routes.login', $config['routes']['login'])
             ->set('eurip_sso.routes.callback', $config['routes']['callback'])
             ->set('eurip_sso.routes.logout', $config['routes']['logout'])
+            ->set('eurip_sso.routes.logout_confirm', $config['routes']['logout_confirm'])
             ->set('eurip_sso.routes.after_login', $config['routes']['after_login'])
             ->set('eurip_sso.routes.after_logout', $config['routes']['after_logout'])
             ->set('eurip_sso.routes.profile', $config['routes']['profile'])
@@ -312,10 +318,19 @@ final class EuripSsoBundle extends AbstractBundle
                 'profile' => $config['routes']['profile'],
                 'debug' => $config['routes']['debug'],
                 'test' => $config['routes']['test'],
+                'logout_confirm' => $config['routes']['logout_confirm'],
                 'backchannel_logout' => $config['routes']['backchannel_logout'],
                 'frontchannel_logout' => $config['routes']['frontchannel_logout'],
             ])
             ->tag('routing.loader');
+
+        // DE: Logout-Komponente registrieren wenn TwigComponent verfügbar
+        // EN: Register logout component if TwigComponent available
+        if (class_exists(\Symfony\UX\TwigComponent\Attribute\AsTwigComponent::class)) {
+            $services->set(LogoutComponent::class)
+                ->autowire()
+                ->autoconfigure();
+        }
 
         $services->alias('eurip_sso.route_loader', OidcRouteLoader::class);
 

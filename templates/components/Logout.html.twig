@@ -1,0 +1,40 @@
+{#
+DE: Logout-Komponente - Rendert ein POST-Formular mit CSRF-Schutz.
+EN: Logout component - Renders a POST form with CSRF protection.
+
+Props:
+  - label: string (default: 'Logout')
+  - class: string (default: '')
+  - asLink: bool (default: false)
+  - confirm: string|null (default: null)
+#}
+<form action="{{ this.logoutUrl }}" method="post" class="sso-logout-form"
+    {%- if confirm %} onsubmit="return confirm('{{ confirm|e('js') }}')"{% endif %}>
+    <input type="hidden" name="_csrf_token" value="{{ this.csrfToken }}">
+    <button type="submit"
+        class="{{ asLink ? 'sso-logout-link' : '' }}{{ class ? (asLink ? ' ' : '') ~ class : '' }}"
+        {%- if asLink %} data-sso-logout-link{% endif %}>
+        {{- label -}}
+    </button>
+</form>
+
+{% if asLink %}
+<style>
+    .sso-logout-form {
+        display: inline;
+    }
+    .sso-logout-link {
+        background: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+        text-decoration: underline;
+    }
+    .sso-logout-link:hover {
+        text-decoration: none;
+    }
+</style>
+{% endif %}

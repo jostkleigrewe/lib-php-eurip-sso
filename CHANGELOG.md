@@ -3,6 +3,36 @@
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-02-07
+
+### Added
+
+**Logout Twig Component**
+- `<twig:EuripSso:Logout />` - Secure logout with CSRF protection
+  - Props: `label`, `class`, `asLink`, `confirm`
+  - Renders POST form with hidden CSRF token
+  - Can be styled as button or link (`asLink="true"`)
+
+**Logout Confirmation Page (optional)**
+- New config: `routes.logout_confirm` (default: `null`)
+- GET endpoint for simple logout links
+- Shows confirmation page with secure POST button
+- Route: `eurip_sso_logout_confirm`
+
+### Fixed
+
+- `profile.html.twig` - Changed broken GET link to `<twig:EuripSso:Logout />` component
+
+### Files Added
+
+```
+src/Bundle/Twig/Components/Logout.php
+templates/components/Logout.html.twig
+templates/logout_confirm.html.twig
+```
+
+---
+
 ## [0.2.1] - 2026-01-31
 
 ### Security
