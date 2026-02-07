@@ -318,6 +318,7 @@ final class EuripSsoBundle extends AbstractBundle
         // Authentication Controller (login, callback, logout)
         $controllerDef = $services->set(AuthenticationController::class)
             ->arg('$authService', new Reference(OidcAuthenticationService::class))
+            ->arg('$sessionStorage', new Reference(OidcSessionStorage::class))
             ->arg('$tokenStorage', new Reference('security.token_storage'))
             ->arg('$translator', new Reference('translator'))
             ->arg('$sessionStorage', new Reference(OidcSessionStorage::class))

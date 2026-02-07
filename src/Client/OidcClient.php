@@ -92,6 +92,42 @@ final class OidcClient
     }
 
     /**
+     * DE: Erstellt die Authorization URL mit bestehendem State (für Doppelklick-Schutz).
+     * EN: Creates the authorization URL with existing state (for double-click protection).
+     *
+     * @param list<string> $scopes
+     */
+    public function buildAuthorizationUrlWithState(
+        string $state,
+        string $nonce,
+        string $codeVerifier,
+        array $scopes = ['openid', 'profile', 'email'],
+    ): string {
+        $codeChallenge = $this->generateCodeChallenge($codeVerifier);
+
+        $params = [
+            'response_type' => 'code',
+            'client_id' => $this->config->clientId,
+            'redirect_uri' => $this->config->redirectUri,
+            'scope' => implode(' ', $scopes),
+            'state' => $state,
+            'nonce' => $nonce,
+            'code_challenge' => $codeChallenge,
+            'code_challenge_method' => 'S256',
+        ];
+
+        $url = $this->config->authorizationEndpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+
+        $this->logger->debug('Built authorization URL with existing state', [
+            'client_id' => $this->config->clientId,
+            'scopes' => $scopes,
+            'state_prefix' => substr($state, 0, 8) . '...',
+        ]);
+
+        return $url;
+    }
+
+    /**
      * DE: Erstellt die Logout-URL für SSO-Logout.
      * EN: Creates the logout URL for SSO logout.
      *

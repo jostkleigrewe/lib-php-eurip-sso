@@ -130,6 +130,68 @@ final class OidcSessionStorage
     }
 
     /**
+     * DE: Gibt gespeicherten State zurück, falls gültig und nicht abgelaufen.
+     *     Für Wiederverwendung bei Doppelklick/Race Conditions.
+     * EN: Returns stored state if valid and not expired.
+     *     For reuse on double-click/race conditions.
+     *
+     * @return array{state: string, nonce: string, verifier: string}|null
+     */
+    public function getValidState(): ?array
+    {
+        $session = $this->requestStack->getSession();
+
+        $state = $session->get(self::KEY_STATE);
+        $nonce = $session->get(self::KEY_NONCE);
+        $verifier = $session->get(self::KEY_VERIFIER);
+        $expires = $session->get(self::KEY_EXPIRES);
+
+        // DE: Alle Werte müssen vorhanden sein // EN: All values must be present
+        if ($state === null || $nonce === null || $verifier === null) {
+            return null;
+        }
+
+        // DE: Bereits verwendet = nicht wiederverwendbar // EN: Already used = not reusable
+        if ($session->get(self::KEY_USED) === true) {
+            return null;
+        }
+
+        // DE: Abgelaufen = nicht wiederverwendbar // EN: Expired = not reusable
+        if ($expires !== null && time() > $expires) {
+            return null;
+        }
+
+        return [
+            'state' => $state,
+            'nonce' => $nonce,
+            'verifier' => $verifier,
+        ];
+    }
+
+    /**
+     * DE: Debug-Info für Logging.
+     * EN: Debug info for logging.
+     *
+     * @return array<string, mixed>
+     */
+    public function getDebugInfo(): array
+    {
+        $session = $this->requestStack->getSession();
+
+        $state = $session->get(self::KEY_STATE);
+        $expires = $session->get(self::KEY_EXPIRES);
+        $used = $session->get(self::KEY_USED);
+
+        return [
+            'has_state' => $state !== null,
+            'state_prefix' => $state !== null ? substr($state, 0, 8) . '...' : null,
+            'expires_in' => $expires !== null ? max(0, $expires - time()) : null,
+            'is_used' => $used === true,
+            'session_id' => substr($session->getId(), 0, 8) . '...',
+        ];
+    }
+
+    /**
      * DE: Markiert den State als erfolgreich verwendet und löscht ihn.
      *     Wird nach erfolgreichem Login aufgerufen.
      * EN: Marks state as successfully used and clears it.

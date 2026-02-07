@@ -85,12 +85,23 @@ final class OidcAuthenticationService
      */
     public function handleCallback(string $code, string $state): array
     {
+        $this->logger?->debug('OIDC handleCallback: Starting', [
+            'state_prefix' => substr($state, 0, 8) . '...',
+            'code_prefix' => substr($code, 0, 8) . '...',
+            'session_debug' => $this->sessionStorage->getDebugInfo(),
+        ]);
+
         // Validate state and get stored data
         $storedData = $this->sessionStorage->validateAndClear($state);
         if ($storedData === null) {
-            $this->logger?->warning('OIDC state validation failed');
+            $this->logger?->warning('OIDC state validation failed', [
+                'received_state_prefix' => substr($state, 0, 8) . '...',
+                'session_debug' => $this->sessionStorage->getDebugInfo(),
+            ]);
             throw new OidcProtocolException('Invalid session state');
         }
+
+        $this->logger?->debug('OIDC handleCallback: State validated, exchanging code');
 
         // Exchange code for tokens
         $tokenResponse = $this->oidcClient->exchangeCode($code, $storedData['verifier']);

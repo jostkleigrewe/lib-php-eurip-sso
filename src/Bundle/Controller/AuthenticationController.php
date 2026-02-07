@@ -29,6 +29,7 @@ final class AuthenticationController extends AbstractController
 {
     public function __construct(
         private readonly OidcAuthenticationService $authService,
+        private readonly OidcSessionStorage $sessionStorage,
         private readonly TokenStorageInterface $tokenStorage,
         private readonly TranslatorInterface $translator,
         private readonly OidcSessionStorage $sessionStorage,
@@ -50,16 +51,40 @@ final class AuthenticationController extends AbstractController
     {
         // Already logged in?
         if ($this->getUser() !== null) {
+            $this->logger?->debug('OIDC login: User already logged in, redirecting', [
+                'user' => $this->getUser()->getUserIdentifier(),
+            ]);
             return $this->redirect($this->defaultTargetPath);
         }
 
         // Get pre-login event (allows cancellation or scope modification)
         $preLoginEvent = $this->authService->getPreLoginEvent($request, $this->scopes);
         if ($preLoginEvent->hasResponse()) {
+            $this->logger?->debug('OIDC login: Pre-login event provided custom response');
             return $preLoginEvent->getResponse();
         }
 
-        // Build authorization URL
+        // DE: Prüfe ob bereits ein gültiger State existiert (Doppelklick-Schutz)
+        // EN: Check if valid state already exists (double-click protection)
+        $existingState = $this->sessionStorage->getValidState();
+        if ($existingState !== null) {
+            $this->logger?->info('OIDC login: Reusing existing state (double-click protection)', [
+                'state_prefix' => substr($existingState['state'], 0, 8) . '...',
+                'session_debug' => $this->sessionStorage->getDebugInfo(),
+            ]);
+
+            // DE: Baue URL mit bestehendem State // EN: Build URL with existing state
+            $authUrl = $this->authService->getClient()->buildAuthorizationUrlWithState(
+                $existingState['state'],
+                $existingState['nonce'],
+                $existingState['verifier'],
+                $preLoginEvent->getScopes(),
+            );
+
+            return new RedirectResponse($authUrl);
+        }
+
+        // Build authorization URL with new state
         $authData = $this->authService->getClient()->buildAuthorizationUrl($preLoginEvent->getScopes());
 
         // DE: State in Session speichern (inkl. Expire-Zeit für Retry-Logik)
@@ -78,6 +103,8 @@ final class AuthenticationController extends AbstractController
 
         $this->logger?->debug('OIDC login initiated', [
             'redirect_to' => parse_url($authData['url'], PHP_URL_HOST),
+            'state_prefix' => substr($authData['state'], 0, 8) . '...',
+            'session_debug' => $this->sessionStorage->getDebugInfo(),
         ]);
 
         return new RedirectResponse($authData['url']);
@@ -117,9 +144,20 @@ final class AuthenticationController extends AbstractController
         $state = $request->query->getString('state');
 
         if ($code === '' || $state === '') {
+            $this->logger?->warning('OIDC callback: Missing required parameters', [
+                'has_code' => $code !== '',
+                'has_state' => $state !== '',
+                'session_debug' => $this->sessionStorage->getDebugInfo(),
+            ]);
             $this->addFlash('error', 'Invalid callback parameters');
             return $this->redirect($this->afterLogoutPath);
         }
+
+        $this->logger?->debug('OIDC callback: Processing', [
+            'state_prefix' => substr($state, 0, 8) . '...',
+            'code_prefix' => substr($code, 0, 8) . '...',
+            'session_debug' => $this->sessionStorage->getDebugInfo(),
+        ]);
 
         try {
             $result = $this->authService->handleCallback($code, $state);
