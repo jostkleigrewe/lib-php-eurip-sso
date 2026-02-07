@@ -66,10 +66,12 @@ final class OidcRouteLoader extends Loader
             methods: ['GET'],
         ));
 
+        // DE: Logout nur POST um CSRF-Angriffe zu verhindern
+        // EN: Logout POST only to prevent CSRF attacks
         $routes->add(OidcConstants::ROUTE_LOGOUT, new Route(
             path: $this->logoutPath,
             defaults: ['_controller' => AuthenticationController::class . '::logout'],
-            methods: ['GET'],
+            methods: ['POST'],
         ));
 
         // Optional Routes - Profile

@@ -68,8 +68,10 @@ eurip_sso:
     # Enable bundle-provided authentication controller
     controller:
         enabled: true
+        firewall: main           # Symfony firewall name (must match security.yaml)
 
     # Route paths for the authentication flow
+    # NOTE: Logout is POST-only and requires CSRF token!
     routes:
         login: /auth/login          # Start SSO login
         callback: /auth/callback    # OIDC callback endpoint

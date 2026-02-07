@@ -22,6 +22,7 @@ use Symfony\Contracts\Cache\ItemInterface;
 final class OidcClientFactory
 {
     private const CACHE_TTL = 3600; // 1 hour
+    private const JWKS_CACHE_TTL = 600; // DE: 10 Minuten für schnellere Key-Rotation // EN: 10 minutes for faster key rotation
     private const CACHE_VERSION = 'v1'; // DE: Bei Breaking Changes hochzählen // EN: Increment on breaking changes
 
     /**
@@ -53,7 +54,66 @@ final class OidcClientFactory
             logger: $logger,
         );
 
-        return new OidcClient($config, $httpClient, $requestFactory, $streamFactory, $logger);
+        $client = new OidcClient($config, $httpClient, $requestFactory, $streamFactory, $logger);
+
+        // DE: JWKS vorab laden und cachen (für JWT-Signatur-Validierung)
+        // EN: Preload and cache JWKS (for JWT signature validation)
+        if ($cache !== null && $config->jwksUri !== '') {
+            self::preloadJwks($client, $config->jwksUri, $httpClient, $requestFactory, $cache, $logger);
+        }
+
+        return $client;
+    }
+
+    /**
+     * DE: Lädt JWKS aus Cache oder vom IdP und übergibt sie an den Client.
+     * EN: Loads JWKS from cache or IdP and passes them to the client.
+     */
+    private static function preloadJwks(
+        OidcClient $client,
+        string $jwksUri,
+        ClientInterface $httpClient,
+        RequestFactoryInterface $requestFactory,
+        CacheInterface $cache,
+        ?LoggerInterface $logger,
+    ): void {
+        $cacheKey = sprintf('eurip_sso.jwks.%s.%s', self::CACHE_VERSION, hash('xxh3', $jwksUri));
+
+        try {
+            /** @var array<string, mixed> $jwks */
+            $jwks = $cache->get($cacheKey, static function (ItemInterface $item) use ($jwksUri, $httpClient, $requestFactory, $logger): array {
+                $item->expiresAfter(self::JWKS_CACHE_TTL);
+
+                $logger?->debug('Fetching JWKS for cache', ['uri' => $jwksUri]);
+
+                $request = $requestFactory->createRequest('GET', $jwksUri)
+                    ->withHeader('Accept', 'application/json');
+
+                $response = $httpClient->sendRequest($request);
+
+                if ($response->getStatusCode() !== 200) {
+                    throw new OidcProtocolException('JWKS request failed: ' . $response->getStatusCode());
+                }
+
+                $data = json_decode((string) $response->getBody(), true);
+
+                if (!is_array($data) || !isset($data['keys'])) {
+                    throw new OidcProtocolException('Invalid JWKS response');
+                }
+
+                $logger?->info('JWKS cached successfully', ['keys_count' => count($data['keys'])]);
+
+                return $data;
+            });
+
+            $client->preloadJwks($jwks);
+        } catch (\Throwable $e) {
+            // DE: Bei Fehlern nicht abbrechen - JWKS werden on-demand geladen
+            // EN: Don't fail on errors - JWKS will be loaded on-demand
+            $logger?->warning('Failed to preload JWKS, will load on-demand', [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

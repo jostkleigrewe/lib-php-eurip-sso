@@ -157,6 +157,12 @@ class AuthController extends AbstractController
 
     /**
      * Step 3: Logout.
+     *
+     * NOTE: The bundle's AuthenticationController uses POST with CSRF token.
+     * This example uses GET for simplicity. For production, use POST:
+     *
+     * #[Route('/auth/logout', name: 'app_auth_logout', methods: ['POST'])]
+     * And validate CSRF: $this->isCsrfTokenValid('logout', $request->request->get('_token'))
      */
     // #[Route('/auth/logout', name: 'app_auth_logout')]
     public function logout(Request $request): RedirectResponse

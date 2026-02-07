@@ -23,7 +23,8 @@ use Psr\Log\NullLogger;
 final class OidcClient
 {
     private const CLOCK_SKEW_SECONDS = 30;
-    private const JWKS_CACHE_TTL_SECONDS = 3600; // DE: 1 Stunde // EN: 1 hour
+    private const JWKS_CACHE_TTL_SECONDS = 600; // DE: 10 Minuten (schnellere Key-Rotation) // EN: 10 minutes (faster key rotation)
+    private const SUPPORTED_ALGORITHM = 'RS256';
 
     /** @var array<string, mixed>|null */
     private ?array $jwksCache = null;
@@ -292,7 +293,7 @@ final class OidcClient
      */
     public function decodeIdToken(
         string $idToken,
-        bool $verifySignature = false,
+        bool $verifySignature = true,
         bool $validateClaims = true,
         ?string $expectedNonce = null,
     ): array {
@@ -391,7 +392,7 @@ final class OidcClient
         $alg = $header['alg'] ?? null;
         $kid = $header['kid'] ?? null;
 
-        if ($alg !== 'RS256') {
+        if ($alg !== self::SUPPORTED_ALGORITHM) {
             throw new OidcProtocolException('Unsupported algorithm: ' . ($alg ?? 'none'));
         }
 
@@ -407,6 +408,11 @@ final class OidcClient
 
         $result = openssl_verify($data, $signature, $publicKey, OPENSSL_ALGO_SHA256);
 
+        // DE: -1 = Fehler bei Verifikation, 0 = ungültige Signatur, 1 = gültig
+        // EN: -1 = verification error, 0 = invalid signature, 1 = valid
+        if ($result === -1) {
+            throw new OidcProtocolException('Signature verification failed: ' . (openssl_error_string() ?: 'unknown error'));
+        }
         if ($result !== 1) {
             throw new OidcProtocolException('Invalid ID token signature');
         }

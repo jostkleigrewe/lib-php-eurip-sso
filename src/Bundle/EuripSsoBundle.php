@@ -105,6 +105,10 @@ final class EuripSsoBundle extends AbstractBundle
                             ->defaultFalse()
                             ->info('Enable bundle-provided auth controller')
                         ->end()
+                        ->scalarNode('firewall')
+                            ->defaultValue('main')
+                            ->info('Symfony firewall name for authentication')
+                        ->end()
                     ->end()
                 ->end()
 
@@ -321,12 +325,11 @@ final class EuripSsoBundle extends AbstractBundle
             ->arg('$sessionStorage', new Reference(OidcSessionStorage::class))
             ->arg('$tokenStorage', new Reference('security.token_storage'))
             ->arg('$translator', new Reference('translator'))
-            ->arg('$sessionStorage', new Reference(OidcSessionStorage::class))
             ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE))
             ->arg('$defaultTargetPath', $config['routes']['after_login'])
             ->arg('$afterLogoutPath', $config['routes']['after_logout'])
             ->arg('$scopes', $config['scopes'])
-            ->arg('$firewallName', 'main');
+            ->arg('$firewallName', $config['controller']['firewall']);
 
         // Inject SSO token storage if client_services enabled
         if ($config['client_services']['enabled']) {

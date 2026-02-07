@@ -18,7 +18,7 @@ OIDC Client Library and Symfony Bundle for Single Sign-On.
 
 ## Requirements
 
-- PHP 8.2+
+- PHP 8.4+
 - Symfony 7.0+ or 8.0+
 - PSR-18 HTTP Client
 
@@ -85,11 +85,19 @@ security:
 ```
 
 **Done!** Routes available:
-- `/auth/login` - Start login
-- `/auth/callback` - SSO callback
-- `/auth/logout` - Logout
-- `/auth/profile` - User profile
-- `/auth/debug` - OIDC config
+- `/auth/login` - Start login (GET)
+- `/auth/callback` - SSO callback (GET)
+- `/auth/logout` - Logout (POST with CSRF token)
+- `/auth/profile` - User profile (GET)
+- `/auth/debug` - OIDC config (GET)
+
+**Important:** The logout route requires POST with CSRF token:
+```twig
+<form action="{{ path('eurip_sso_logout') }}" method="POST">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token('eurip_sso_logout') }}">
+    <button type="submit">Logout</button>
+</form>
+```
 
 ## Extending via Events
 
@@ -477,6 +485,7 @@ eurip_sso:
 
     controller:
         enabled: false
+        firewall: main               # Symfony firewall name
 
     routes:
         login: /auth/login

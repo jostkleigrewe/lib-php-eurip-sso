@@ -51,9 +51,9 @@ final class OidcSessionStorage
 
     /**
      * DE: Validiert State und gibt gespeicherte Daten zurück.
-     *     Markiert State NICHT als verwendet - das passiert erst bei markUsed().
+     *     Markiert State SOFORT als verwendet um Race Conditions zu verhindern.
      * EN: Validates state and returns stored data if valid.
-     *     Does NOT mark state as used - that happens in markUsed().
+     *     Marks state as used IMMEDIATELY to prevent race conditions.
      *
      * @return array{nonce: string, verifier: string}|null
      */
@@ -62,7 +62,9 @@ final class OidcSessionStorage
         $session = $this->requestStack->getSession();
 
         $storedState = $session->get(self::KEY_STATE);
-        if ($storedState === null || !hash_equals($storedState, $state)) {
+        // DE: Type-Check für Session-Wert (könnte manipuliert sein)
+        // EN: Type check for session value (could be manipulated)
+        if (!is_string($storedState) || !hash_equals($storedState, $state)) {
             return null;
         }
 
@@ -85,8 +87,11 @@ final class OidcSessionStorage
             return null;
         }
 
-        // DE: Nicht mehr hier als "used" markieren - das macht jetzt markUsed()
-        // EN: No longer marking as used here - that's now done by markUsed()
+        // DE: SOFORT als "used" markieren um Race Conditions zu verhindern.
+        //     Bei parallelen Requests kann nur einer erfolgreich validieren.
+        // EN: Mark as "used" IMMEDIATELY to prevent race conditions.
+        //     With parallel requests, only one can successfully validate.
+        $session->set(self::KEY_USED, true);
 
         return [
             'nonce' => $nonce,
@@ -182,12 +187,13 @@ final class OidcSessionStorage
         $expires = $session->get(self::KEY_EXPIRES);
         $used = $session->get(self::KEY_USED);
 
+        // DE: Session-ID NICHT loggen (Security-Risiko bei Log-Leak)
+        // EN: Do NOT log session ID (security risk if logs are leaked)
         return [
             'has_state' => $state !== null,
             'state_prefix' => $state !== null ? substr($state, 0, 8) . '...' : null,
             'expires_in' => $expires !== null ? max(0, $expires - time()) : null,
             'is_used' => $used === true,
-            'session_id' => substr($session->getId(), 0, 8) . '...',
         ];
     }
 

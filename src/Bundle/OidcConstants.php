@@ -46,4 +46,7 @@ interface OidcConstants
 
     // Default Firewall
     public const DEFAULT_FIREWALL = 'main';
+
+    // CSRF Token Intentions
+    public const CSRF_LOGOUT_INTENTION = 'eurip_sso_logout';
 }

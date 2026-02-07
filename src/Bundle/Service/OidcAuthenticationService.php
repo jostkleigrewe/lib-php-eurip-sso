@@ -103,13 +103,13 @@ final class OidcAuthenticationService
 
         $this->logger?->debug('OIDC handleCallback: State validated, exchanging code');
 
+        // DE: State wurde bereits in validateAndClear() als "used" markiert
+        //     um Race Conditions zu verhindern (kein Retry bei parallelen Requests)
+        // EN: State was already marked as "used" in validateAndClear()
+        //     to prevent race conditions (no retry with parallel requests)
+
         // Exchange code for tokens
         $tokenResponse = $this->oidcClient->exchangeCode($code, $storedData['verifier']);
-
-        // DE: Erst NACH erfolgreichem Token-Exchange als "used" markieren
-        // EN: Only mark as "used" AFTER successful token exchange
-        // Das ermöglicht Retry bei Netzwerkfehlern während des Token-Exchange
-        $this->sessionStorage->markUsed();
 
         // Decode and validate ID token
         $claims = [];

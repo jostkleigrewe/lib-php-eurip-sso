@@ -32,7 +32,6 @@ final class AuthenticationController extends AbstractController
         private readonly OidcSessionStorage $sessionStorage,
         private readonly TokenStorageInterface $tokenStorage,
         private readonly TranslatorInterface $translator,
-        private readonly OidcSessionStorage $sessionStorage,
         private readonly ?LoggerInterface $logger = null,
         private readonly string $defaultTargetPath = '/',
         private readonly string $afterLogoutPath = '/',
@@ -179,6 +178,10 @@ final class AuthenticationController extends AbstractController
                 $this->ssoTokenStorage->storeTokens($successEvent->tokenResponse);
             }
 
+            // DE: Session-ID regenerieren um Session Fixation zu verhindern
+            // EN: Regenerate session ID to prevent session fixation
+            $session->migrate(true);
+
             // Login user into Symfony security
             $token = new UsernamePasswordToken($user, $this->firewallName, $successEvent->getRoles());
             $this->tokenStorage->setToken($token);
@@ -189,7 +192,9 @@ final class AuthenticationController extends AbstractController
             $targetPath = $successEvent->getTargetPath();
             if ($targetPath === null) {
                 $storedReturnUrl = $session->get(OidcConstants::SESSION_RETURN_URL);
-                $targetPath = ($storedReturnUrl !== null && $this->isValidReturnUrl($storedReturnUrl))
+                // DE: Type-Check für Session-Wert (könnte manipuliert sein)
+                // EN: Type check for session value (could be manipulated)
+                $targetPath = (is_string($storedReturnUrl) && $this->isValidReturnUrl($storedReturnUrl))
                     ? $storedReturnUrl
                     : $this->defaultTargetPath;
             }
@@ -256,11 +261,19 @@ final class AuthenticationController extends AbstractController
     }
 
     /**
-     * DE: Führt den Logout durch.
-     * EN: Performs logout.
+     * DE: Führt den Logout durch (nur POST mit CSRF-Token).
+     * EN: Performs logout (POST only with CSRF token).
      */
     public function logout(Request $request): Response
     {
+        // DE: CSRF-Token validieren um Logout-CSRF zu verhindern
+        // EN: Validate CSRF token to prevent logout CSRF attacks
+        $csrfToken = $request->request->getString('_csrf_token');
+        if (!$this->isCsrfTokenValid(OidcConstants::CSRF_LOGOUT_INTENTION, $csrfToken)) {
+            $this->logger?->warning('OIDC logout: Invalid CSRF token');
+            throw $this->createAccessDeniedException('Invalid CSRF token');
+        }
+
         $session = $request->getSession();
         $idToken = $session->get(OidcConstants::SESSION_ID_TOKEN);
         $user = $this->getUser();

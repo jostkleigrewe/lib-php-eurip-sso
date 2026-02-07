@@ -400,12 +400,38 @@ nelmio_cors:
 ## 7. Logout funktioniert nicht
 
 ### Symptom
+- HTTP 405 Method Not Allowed
 - Lokale Session wird beendet, aber SSO-Session bleibt aktiv
 - Redirect zum IdP schlägt fehl
 
 ### Ursachen & Lösungen
 
-#### A) end_session_endpoint fehlt
+#### A) Logout ist POST-only (seit v1.x)
+
+**Problem:** Logout-Link verwendet GET statt POST.
+
+**Lösung:** Logout muss als Formular mit CSRF-Token gesendet werden:
+```twig
+{# Falsch: <a href="{{ path('eurip_sso_logout') }}">Logout</a> #}
+
+{# Richtig: #}
+<form action="{{ path('eurip_sso_logout') }}" method="POST" style="display:inline">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token('eurip_sso_logout') }}">
+    <button type="submit">Logout</button>
+</form>
+```
+
+Für einen Logout-Link mit JavaScript:
+```twig
+<a href="#" onclick="document.getElementById('logout-form').submit(); return false;">Logout</a>
+<form id="logout-form" action="{{ path('eurip_sso_logout') }}" method="POST" style="display:none">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token('eurip_sso_logout') }}">
+</form>
+```
+
+### Ursachen & Lösungen
+
+#### B) end_session_endpoint fehlt
 
 **Problem:** IdP unterstützt kein RP-Initiated Logout.
 
@@ -426,7 +452,7 @@ class LocalLogoutListener
 }
 ```
 
-#### B) id_token fehlt für Logout
+#### C) id_token fehlt für Logout
 
 **Problem:** Bundle braucht `id_token_hint` für SSO-Logout, aber Token ist nicht mehr verfügbar.
 
@@ -548,6 +574,7 @@ curl -s https://sso.example.com/.well-known/openid-configuration | jq .
 | Discovery unreachable | Network/DNS | Check container networking |
 | User not found | Mapping mismatch | Verify entity field names |
 | Session lost | Firewall config | Check security.yaml provider |
+| Logout 405 error | GET instead of POST | Use POST form with CSRF token |
 | Logout fails | No end_session_endpoint | Use `skipSsoLogout()` event |
 | Claims missing | Scopes not requested | Add scopes to config |
 
