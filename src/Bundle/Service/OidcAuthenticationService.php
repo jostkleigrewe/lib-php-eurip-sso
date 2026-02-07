@@ -95,6 +95,11 @@ final class OidcAuthenticationService
         // Exchange code for tokens
         $tokenResponse = $this->oidcClient->exchangeCode($code, $storedData['verifier']);
 
+        // DE: Erst NACH erfolgreichem Token-Exchange als "used" markieren
+        // EN: Only mark as "used" AFTER successful token exchange
+        // Das ermöglicht Retry bei Netzwerkfehlern während des Token-Exchange
+        $this->sessionStorage->markUsed();
+
         // Decode and validate ID token
         $claims = [];
         $idToken = null;

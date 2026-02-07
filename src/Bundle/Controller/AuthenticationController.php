@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Jostkleigrewe\Sso\Bundle\Controller;
 
 use Jostkleigrewe\Sso\Bundle\OidcConstants;
+use Jostkleigrewe\Sso\Bundle\Security\OidcSessionStorage;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoTokenStorage;
 use Jostkleigrewe\Sso\Bundle\Service\OidcAuthenticationService;
 use Jostkleigrewe\Sso\Contracts\Exception\ClaimsValidationException;
@@ -30,6 +31,7 @@ final class AuthenticationController extends AbstractController
         private readonly OidcAuthenticationService $authService,
         private readonly TokenStorageInterface $tokenStorage,
         private readonly TranslatorInterface $translator,
+        private readonly OidcSessionStorage $sessionStorage,
         private readonly ?LoggerInterface $logger = null,
         private readonly string $defaultTargetPath = '/',
         private readonly string $afterLogoutPath = '/',
@@ -60,11 +62,13 @@ final class AuthenticationController extends AbstractController
         // Build authorization URL
         $authData = $this->authService->getClient()->buildAuthorizationUrl($preLoginEvent->getScopes());
 
-        // Store state in session via service's session storage
-        // Note: We need to manually store since we're not using initiateLogin() to avoid double event dispatch
-        $request->getSession()->set(OidcConstants::SESSION_STATE, $authData['state']);
-        $request->getSession()->set(OidcConstants::SESSION_NONCE, $authData['nonce']);
-        $request->getSession()->set(OidcConstants::SESSION_VERIFIER, $authData['code_verifier']);
+        // DE: State in Session speichern (inkl. Expire-Zeit für Retry-Logik)
+        // EN: Store state in session (including expire time for retry logic)
+        $this->sessionStorage->store(
+            state: $authData['state'],
+            nonce: $authData['nonce'],
+            verifier: $authData['code_verifier'],
+        );
 
         // Store return URL if provided (validate to prevent open redirect)
         $returnUrl = $request->query->get('return');

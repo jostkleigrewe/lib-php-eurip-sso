@@ -51,9 +51,9 @@ final class OidcSessionStorage
 
     /**
      * DE: Validiert State und gibt gespeicherte Daten zurück.
-     *     Unterstützt einmaliges Retry innerhalb des Retry-Windows.
+     *     Markiert State NICHT als verwendet - das passiert erst bei markUsed().
      * EN: Validates state and returns stored data if valid.
-     *     Supports single retry within the retry window.
+     *     Does NOT mark state as used - that happens in markUsed().
      *
      * @return array{nonce: string, verifier: string}|null
      */
@@ -85,13 +85,24 @@ final class OidcSessionStorage
             return null;
         }
 
-        // Mark as used (but don't clear yet - allows debugging)
-        $session->set(self::KEY_USED, true);
+        // DE: Nicht mehr hier als "used" markieren - das macht jetzt markUsed()
+        // EN: No longer marking as used here - that's now done by markUsed()
 
         return [
             'nonce' => $nonce,
             'verifier' => $verifier,
         ];
+    }
+
+    /**
+     * DE: Markiert den State als verwendet (nach erfolgreichem Token-Exchange).
+     *     Verhindert Replay-Attacken, erlaubt aber Retry bei Fehlern.
+     * EN: Marks state as used (after successful token exchange).
+     *     Prevents replay attacks but allows retry on failure.
+     */
+    public function markUsed(): void
+    {
+        $this->requestStack->getSession()->set(self::KEY_USED, true);
     }
 
     /**
