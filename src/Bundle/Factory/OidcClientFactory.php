@@ -153,7 +153,9 @@ final class OidcClientFactory
             return $fetchDiscovery();
         }
 
-        $cacheKey = sprintf('eurip_sso.discovery.%s.%s', self::CACHE_VERSION, hash('xxh3', $issuer));
+        // DE: Cache-Key enthält issuer UND publicIssuer, damit Änderungen an publicIssuer den Cache invalidieren
+        // EN: Cache key includes issuer AND publicIssuer, so changes to publicIssuer invalidate the cache
+        $cacheKey = sprintf('eurip_sso.discovery.%s.%s', self::CACHE_VERSION, hash('xxh3', $issuer . '|' . ($publicIssuer ?? '')));
 
         /** @var OidcClientConfig */
         return $cache->get($cacheKey, static function (ItemInterface $item) use ($fetchDiscovery, $cacheTtl): OidcClientConfig {
