@@ -111,13 +111,45 @@ final class AuthenticationController extends AbstractController
 
     /**
      * DE: Callback-Route vom IdP — wird vom OidcAuthenticator abgefangen.
-     *     Wirft LogicException falls der Authenticator nicht aktiv ist (wie Symfony json_login).
+     *     Behandelt OAuth-Fehler-Redirects (z.B. ?error=invalid_scope).
+     *     Wirft LogicException nur bei Konfigurationsfehlern.
      * EN: Callback route from IdP — intercepted by OidcAuthenticator.
-     *     Throws LogicException if the authenticator is not active (like Symfony json_login).
+     *     Handles OAuth error redirects (e.g. ?error=invalid_scope).
+     *     Throws LogicException only for configuration errors.
      */
     #[Route('%eurip_sso.routes.callback%', name: OidcConstants::ROUTE_CALLBACK, methods: ['GET'])]
-    public function callback(Request $request): never
+    public function callback(Request $request): Response
     {
+        // DE: OAuth-Fehler vom IdP behandeln (RFC 6749 §4.1.2.1)
+        // EN: Handle OAuth errors from IdP (RFC 6749 §4.1.2.1)
+        $error = $request->query->get('error');
+        if ($error !== null) {
+            $errorDescription = $request->query->get('error_description', '');
+
+            $this->logger?->warning('OIDC callback: OAuth error from IdP', [
+                'error' => $error,
+                'description' => $errorDescription,
+            ]);
+
+            // DE: Fehler in Session speichern für Error-Seite
+            // EN: Store error in session for error page
+            $request->getSession()->set(OidcConstants::SESSION_AUTH_ERROR, [
+                'code' => $error,
+                'message' => $errorDescription ?: $error,
+                'timestamp' => time(),
+            ]);
+
+            // DE: State löschen um frischen Login zu ermöglichen
+            // EN: Clear state to allow fresh login
+            $this->sessionStorage->clear();
+
+            return $this->redirectToRoute(OidcConstants::ROUTE_ERROR);
+        }
+
+        // DE: Wenn wir hier ankommen, sollte der Authenticator den Request behandelt haben.
+        //     Das passiert nur bei Konfigurationsfehlern.
+        // EN: If we reach here, the authenticator should have handled the request.
+        //     This only happens with configuration errors.
         throw new \LogicException(
             'This controller action should be handled by the OidcAuthenticator. '
             . 'Make sure the authenticator is enabled in your security configuration.'
