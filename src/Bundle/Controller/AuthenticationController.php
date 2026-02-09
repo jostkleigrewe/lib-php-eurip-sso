@@ -36,6 +36,8 @@ final class AuthenticationController extends AbstractController
         /** @var list<string> */
         #[Autowire('%eurip_sso.scopes%')]
         private readonly array $scopes = OidcConstants::DEFAULT_SCOPES,
+        #[Autowire('%kernel.debug%')]
+        private readonly bool $isDebug = false,
     ) {
     }
 
@@ -191,6 +193,52 @@ final class AuthenticationController extends AbstractController
 
         $this->addFlash('success', $this->translator->trans('eurip_sso.flash.logout_success', [], OidcConstants::TRANSLATION_DOMAIN));
         return $this->redirect($this->afterLogoutPath);
+    }
+
+    /**
+     * DE: Zeigt die Fehlerseite bei Auth-Fehlern.
+     *     Verhindert Redirect-Loops indem Fehler hier angezeigt werden.
+     * EN: Shows error page for authentication failures.
+     *     Prevents redirect loops by displaying errors here.
+     */
+    #[Route('%eurip_sso.routes.error%', name: OidcConstants::ROUTE_ERROR, methods: ['GET'])]
+    public function error(Request $request): Response
+    {
+        $session = $request->getSession();
+
+        // DE: Fehler aus Session lesen (One-Time-Read)
+        // EN: Read error from session (one-time read)
+        /** @var array{code: string, message: string, timestamp: int}|null $error */
+        $error = $session->get(OidcConstants::SESSION_AUTH_ERROR);
+        $session->remove(OidcConstants::SESSION_AUTH_ERROR);
+
+        // DE: Fehler-TTL prüfen (5 Minuten) — alte Fehler ignorieren
+        // EN: Check error TTL (5 minutes) — ignore stale errors
+        if ($error !== null) {
+            $age = time() - $error['timestamp'];
+            if ($age > OidcConstants::AUTH_ERROR_TTL) {
+                $error = null;
+            }
+        }
+
+        // DE: Ohne Fehler zur Startseite leiten
+        // EN: Redirect to home if no error
+        if ($error === null) {
+            return $this->redirect($this->defaultTargetPath);
+        }
+
+        // DE: State löschen um frischen Login zu ermöglichen
+        // EN: Clear state to allow fresh login
+        $this->sessionStorage->clear();
+
+        return $this->render('@EuripSso/error.html.twig', [
+            'error_code' => $error['code'],
+            'error_message' => $error['message'],
+            'error_timestamp' => (new \DateTimeImmutable())->setTimestamp($error['timestamp']),
+            'login_url' => $this->generateUrl(OidcConstants::ROUTE_LOGIN),
+            'home_url' => $this->defaultTargetPath,
+            'is_debug' => $this->isDebug,
+        ]);
     }
 
     /**

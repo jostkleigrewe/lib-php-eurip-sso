@@ -50,6 +50,8 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
         private readonly string $defaultTargetPath = '/',
         #[Autowire('%eurip_sso.routes.login%')]
         private readonly string $loginPath = '/login',
+        #[Autowire('%eurip_sso.routes.error%')]
+        private readonly string $errorPath = '/auth/error',
         /** @var list<string> */
         #[Autowire('%eurip_sso.scopes%')]
         private readonly array $scopes = OidcConstants::DEFAULT_SCOPES,
@@ -120,25 +122,41 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
 
     public function onAuthenticationFailure(Request $request, AuthenticationException $exception): Response
     {
+        $errorCode = 'unknown_error';
+        $errorMessage = $exception->getMessage();
+
         if ($exception instanceof OidcAuthenticationException) {
+            $errorCode = $exception->errorCode->value;
+
             $this->logger?->warning('OIDC authentication failed', [
-                'error_code' => $exception->errorCode->value,
-                'message' => $exception->getMessage(),
+                'error_code' => $errorCode,
+                'message' => $errorMessage,
             ]);
 
             // DE: Failure-Event dispatchen für Event-Listener // EN: Dispatch failure event for event listeners
             $this->authService->dispatchFailure(
-                $exception->errorCode->value,
-                $exception->getMessage(),
+                $errorCode,
+                $errorMessage,
                 $exception->originalException,
             );
         }
 
-        /** @var \Symfony\Component\HttpFoundation\Session\Session $session */
+        // DE: Fehler in Session speichern (statt Flash) für Error-Seite
+        // EN: Store error in session (not flash) for error page
         $session = $request->getSession();
-        $session->getFlashBag()->add('error', $exception->getMessageKey());
+        $session->set(OidcConstants::SESSION_AUTH_ERROR, [
+            'code' => $errorCode,
+            'message' => $errorMessage,
+            'timestamp' => time(),
+        ]);
 
-        return new RedirectResponse($this->loginPath);
+        // DE: State löschen um frischen Login zu ermöglichen
+        // EN: Clear state to allow fresh login
+        $this->sessionStorage->clear();
+
+        // DE: Zur Error-Seite leiten (nicht Login!) um Redirect-Loop zu verhindern
+        // EN: Redirect to error page (not login!) to prevent redirect loops
+        return new RedirectResponse($this->errorPath);
     }
 
     public function start(Request $request, ?AuthenticationException $authException = null): Response

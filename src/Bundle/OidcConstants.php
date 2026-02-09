@@ -23,12 +23,17 @@ final class OidcConstants
     public const string SESSION_ACCESS_TOKEN = '_eurip_sso_access_token';
     public const string SESSION_REFRESH_TOKEN = '_eurip_sso_refresh_token';
     public const string SESSION_TOKEN_EXPIRES = '_eurip_sso_token_expires';
+    public const string SESSION_AUTH_ERROR = '_eurip_sso_auth_error';
+
+    // Error TTL (5 minutes)
+    public const int AUTH_ERROR_TTL = 300;
 
     // Route Names
     public const string ROUTE_LOGIN = 'eurip_sso_login';
     public const string ROUTE_CALLBACK = 'eurip_sso_callback';
     public const string ROUTE_LOGOUT = 'eurip_sso_logout';
     public const string ROUTE_LOGOUT_CONFIRM = 'eurip_sso_logout_confirm';
+    public const string ROUTE_ERROR = 'eurip_sso_error';
     public const string ROUTE_BACKCHANNEL_LOGOUT = 'eurip_sso_backchannel_logout';
     public const string ROUTE_FRONTCHANNEL_LOGOUT = 'eurip_sso_frontchannel_logout';
     public const string ROUTE_PROFILE = 'eurip_sso_profile';

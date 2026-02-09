@@ -25,9 +25,11 @@ final class OidcSessionStorage
 
     /**
      * DE: Retry-Window in Sekunden (für Browser-Refresh, Netzwerk-Retry).
+     *     5 Minuten erlauben genug Zeit für Consent-Entscheidungen.
      * EN: Retry window in seconds (for browser refresh, network retry).
+     *     5 minutes allows enough time for consent decisions.
      */
-    private const RETRY_WINDOW_SECONDS = 60;
+    private const RETRY_WINDOW_SECONDS = 300;
 
     public function __construct(
         private readonly RequestStack $requestStack,

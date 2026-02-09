@@ -104,6 +104,10 @@ final class EuripSsoBundle extends AbstractBundle
                         ->scalarNode('profile')->defaultValue('/auth/profile')->end()
                         ->scalarNode('debug')->defaultValue('/auth/debug')->end()
                         ->scalarNode('test')->defaultValue('/auth/test')->end()
+                        ->scalarNode('error')
+                            ->defaultValue('/auth/error')
+                            ->info('Error page for authentication failures (prevents redirect loops)')
+                        ->end()
                         // DE: OpenID Connect Logout Extensions
                         // EN: OpenID Connect Logout Extensions
                         ->scalarNode('backchannel_logout')
@@ -182,6 +186,7 @@ final class EuripSsoBundle extends AbstractBundle
             ->set('eurip_sso.routes.profile', $config['routes']['profile'])
             ->set('eurip_sso.routes.debug', $config['routes']['debug'])
             ->set('eurip_sso.routes.test', $config['routes']['test'])
+            ->set('eurip_sso.routes.error', $config['routes']['error'])
             ->set('eurip_sso.routes.backchannel_logout', $config['routes']['backchannel_logout'])
             ->set('eurip_sso.routes.frontchannel_logout', $config['routes']['frontchannel_logout']);
 
