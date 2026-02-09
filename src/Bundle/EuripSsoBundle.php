@@ -66,6 +66,12 @@ final class EuripSsoBundle extends AbstractBundle
                     ->defaultValue(['openid', 'profile', 'email'])
                 ->end()
 
+                // Security
+                ->booleanNode('require_https')
+                    ->defaultTrue()
+                    ->info('Require HTTPS for all OIDC endpoints (disable only for local development)')
+                ->end()
+
                 // Cache
                 ->arrayNode('cache')
                     ->addDefaultsIfNotSet()
@@ -173,6 +179,7 @@ final class EuripSsoBundle extends AbstractBundle
             ->set('eurip_sso.redirect_uri', $config['redirect_uri'])
             ->set('eurip_sso.public_issuer', $config['public_issuer'])
             ->set('eurip_sso.scopes', $config['scopes'])
+            ->set('eurip_sso.require_https', $config['require_https'])
             ->set('eurip_sso.cache.enabled', $config['cache']['enabled'])
             ->set('eurip_sso.cache.ttl', $config['cache']['ttl'])
             ->set('eurip_sso.cache.pool', $config['cache']['pool'])
@@ -240,11 +247,12 @@ final class EuripSsoBundle extends AbstractBundle
             '$streamFactory' => new Reference(StreamFactoryInterface::class),
             '$clientSecret' => $config['client_secret'],
             '$publicIssuer' => $config['public_issuer'],
-            '$cacheTtl' => $config['cache']['ttl'],
-            '$logger' => new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE),
             '$cache' => $config['cache']['enabled']
                 ? new Reference($config['cache']['pool'])
                 : null,
+            '$cacheTtl' => $config['cache']['ttl'],
+            '$logger' => new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE),
+            '$requireHttps' => $config['require_https'],
         ];
 
         $container->services()

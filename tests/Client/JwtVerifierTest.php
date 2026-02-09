@@ -13,6 +13,8 @@ use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamInterface;
+use Symfony\Contracts\Cache\CacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 
 /**
  * DE: Tests für JwtVerifier mit echtem RSA-Key-Pair.
@@ -22,6 +24,7 @@ final class JwtVerifierTest extends TestCase
 {
     private const KID = 'test-key-1';
     private const JWKS_URI = 'https://sso.example.com/.well-known/jwks.json';
+    private const CACHE_KEY = 'eurip_sso.jwks.v1.test';
 
     private \OpenSSLAsymmetricKey $privateKey;
 
@@ -58,7 +61,7 @@ final class JwtVerifierTest extends TestCase
     #[Test]
     public function verifySignatureSucceedsWithValidRs256Signature(): void
     {
-        $verifier = $this->createVerifierWithPreloadedJwks();
+        $verifier = $this->createVerifierWithCachedJwks();
         [$data, $signatureB64, $header] = $this->signData(['alg' => 'RS256', 'kid' => self::KID]);
 
         // DE: Darf keine Exception werfen
@@ -71,7 +74,7 @@ final class JwtVerifierTest extends TestCase
     #[Test]
     public function verifySignatureSucceedsWithoutKidWhenSingleKey(): void
     {
-        $verifier = $this->createVerifierWithPreloadedJwks();
+        $verifier = $this->createVerifierWithCachedJwks();
         [$data, $signatureB64, $header] = $this->signData(['alg' => 'RS256']);
 
         $verifier->verifySignature($data, $signatureB64, $header);
@@ -84,7 +87,7 @@ final class JwtVerifierTest extends TestCase
     #[Test]
     public function verifySignatureThrowsOnWrongSignature(): void
     {
-        $verifier = $this->createVerifierWithPreloadedJwks();
+        $verifier = $this->createVerifierWithCachedJwks();
         [$data, , $header] = $this->signData(['alg' => 'RS256', 'kid' => self::KID]);
 
         // DE: Manipulierte Signatur (gültig Base64URL, aber falscher Inhalt)
@@ -100,7 +103,7 @@ final class JwtVerifierTest extends TestCase
     #[Test]
     public function verifySignatureThrowsOnTamperedData(): void
     {
-        $verifier = $this->createVerifierWithPreloadedJwks();
+        $verifier = $this->createVerifierWithCachedJwks();
         [$data, $signatureB64, $header] = $this->signData(['alg' => 'RS256', 'kid' => self::KID]);
 
         // DE: Daten nach Signierung manipuliert
@@ -118,10 +121,9 @@ final class JwtVerifierTest extends TestCase
     #[Test]
     public function verifySignatureThrowsOnUnknownKid(): void
     {
-        // DE: HTTP-Mock gibt JWKS ohne den gesuchten kid zurück (auch beim Retry)
-        // EN: HTTP mock returns JWKS without the requested kid (even on retry)
-        $verifier = $this->createVerifierWithHttpMock($this->buildJwks());
-        $verifier->preloadJwks($this->buildJwks());
+        // DE: Cache gibt JWKS ohne den gesuchten kid zurück (auch beim Retry)
+        // EN: Cache returns JWKS without the requested kid (even on retry)
+        $verifier = $this->createVerifierWithCachedJwks();
 
         [$data, $signatureB64, $header] = $this->signData(['alg' => 'RS256', 'kid' => 'unknown-kid']);
 
@@ -136,7 +138,7 @@ final class JwtVerifierTest extends TestCase
     #[Test]
     public function verifySignatureThrowsOnUnsupportedAlgorithm(): void
     {
-        $verifier = $this->createVerifierWithPreloadedJwks();
+        $verifier = $this->createVerifierWithCachedJwks();
 
         $this->expectException(OidcProtocolException::class);
         $this->expectExceptionMessage('Unsupported algorithm: HS256');
@@ -147,7 +149,7 @@ final class JwtVerifierTest extends TestCase
     #[Test]
     public function verifySignatureThrowsOnMissingAlgorithm(): void
     {
-        $verifier = $this->createVerifierWithPreloadedJwks();
+        $verifier = $this->createVerifierWithCachedJwks();
 
         $this->expectException(OidcProtocolException::class);
         $this->expectExceptionMessage('Unsupported algorithm: none');
@@ -160,24 +162,37 @@ final class JwtVerifierTest extends TestCase
     #[Test]
     public function verifySignatureRetriesOnKeyRotation(): void
     {
-        // DE: Preloaded JWKS hat nur den alten Key (kid='old-key')
-        // EN: Preloaded JWKS only has the old key (kid='old-key')
+        // DE: Erster Cache-Abruf gibt alten Key zurück, nach delete() den neuen
+        // EN: First cache fetch returns old key, after delete() the new one
         $oldJwk = $this->jwk;
         $oldJwk['kid'] = 'old-key';
         $oldJwks = ['keys' => [$oldJwk]];
-
-        // DE: HTTP-Mock gibt neue JWKS mit dem richtigen Key zurück
-        // EN: HTTP mock returns new JWKS with the correct key
         $newJwks = $this->buildJwks();
-        $verifier = $this->createVerifierWithHttpMock($newJwks);
-        $verifier->preloadJwks($oldJwks);
 
-        // DE: JWT signiert mit kid='test-key-1' (nicht im preloaded Cache)
-        // EN: JWT signed with kid='test-key-1' (not in preloaded cache)
+        $callCount = 0;
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('get')->willReturnCallback(function ($key, $callback) use (&$callCount, $oldJwks, $newJwks) {
+            $callCount++;
+            // DE: Erster Abruf = alte JWKS, nach Invalidierung = neue JWKS
+            // EN: First fetch = old JWKS, after invalidation = new JWKS
+            return $callCount === 1 ? $oldJwks : $newJwks;
+        });
+        $cache->expects($this->once())->method('delete');
+
+        $verifier = new JwtVerifier(
+            jwksUri: self::JWKS_URI,
+            httpClient: $this->createStub(ClientInterface::class),
+            requestFactory: $this->createStub(RequestFactoryInterface::class),
+            cache: $cache,
+            cacheKey: self::CACHE_KEY,
+        );
+
+        // DE: JWT signiert mit kid='test-key-1' (nicht im ersten Cache-Abruf)
+        // EN: JWT signed with kid='test-key-1' (not in first cache fetch)
         [$data, $signatureB64, $header] = $this->signData(['alg' => 'RS256', 'kid' => self::KID]);
 
-        // DE: Erster Versuch: kid nicht gefunden → Cache invalidieren → HTTP-Fetch → kid gefunden → ok
-        // EN: First attempt: kid not found → invalidate cache → HTTP fetch → kid found → ok
+        // DE: Erster Versuch: kid nicht gefunden → Cache invalidieren → erneuter Abruf → kid gefunden → ok
+        // EN: First attempt: kid not found → invalidate cache → refetch → kid found → ok
         $verifier->verifySignature($data, $signatureB64, $header);
 
         $this->assertTrue(true);
@@ -186,14 +201,22 @@ final class JwtVerifierTest extends TestCase
     #[Test]
     public function verifySignatureFailsAfterRetryWhenKeyStillNotFound(): void
     {
-        // DE: Preloaded und HTTP-JWKS haben nur 'old-key'
-        // EN: Preloaded and HTTP JWKS only have 'old-key'
+        // DE: Cache gibt immer nur 'old-key' zurück
+        // EN: Cache always returns only 'old-key'
         $oldJwk = $this->jwk;
         $oldJwk['kid'] = 'old-key';
         $oldJwks = ['keys' => [$oldJwk]];
 
-        $verifier = $this->createVerifierWithHttpMock($oldJwks);
-        $verifier->preloadJwks($oldJwks);
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('get')->willReturn($oldJwks);
+
+        $verifier = new JwtVerifier(
+            jwksUri: self::JWKS_URI,
+            httpClient: $this->createStub(ClientInterface::class),
+            requestFactory: $this->createStub(RequestFactoryInterface::class),
+            cache: $cache,
+            cacheKey: self::CACHE_KEY,
+        );
 
         [$data, $signatureB64, $header] = $this->signData(['alg' => 'RS256', 'kid' => self::KID]);
 
@@ -203,27 +226,42 @@ final class JwtVerifierTest extends TestCase
         $verifier->verifySignature($data, $signatureB64, $header);
     }
 
-    // ── JWKS Cache TTL ───────────────────────────────────────────────
+    // ── Cache Integration ───────────────────────────────────────────
 
     #[Test]
-    public function fetchJwksRefetchesAfterCacheTtlExpired(): void
+    public function fetchJwksUsesCacheWhenAvailable(): void
     {
-        // DE: Verifier mit HTTP-Mock erstellen und JWKS preloaden
-        // EN: Create verifier with HTTP mock and preload JWKS
+        // DE: HTTP-Client sollte NICHT aufgerufen werden
+        // EN: HTTP client should NOT be called
+        $httpClient = $this->createMock(ClientInterface::class);
+        $httpClient->expects($this->never())->method('sendRequest');
+
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('get')->willReturn($this->buildJwks());
+
+        $verifier = new JwtVerifier(
+            jwksUri: self::JWKS_URI,
+            httpClient: $httpClient,
+            requestFactory: $this->createStub(RequestFactoryInterface::class),
+            cache: $cache,
+            cacheKey: self::CACHE_KEY,
+        );
+
+        // DE: Cache ist vorhanden → kein HTTP-Request
+        // EN: Cache is available → no HTTP request
+        $jwks = $verifier->fetchAndCacheJwks();
+
+        $this->assertArrayHasKey('keys', $jwks);
+    }
+
+    #[Test]
+    public function fetchJwksFetchesFromHttpWhenNoCache(): void
+    {
+        // DE: Ohne Cache sollte HTTP-Client aufgerufen werden
+        // EN: Without cache, HTTP client should be called
         $httpClient = $this->createStub(ClientInterface::class);
         $requestFactory = $this->createMockRequestFactory();
 
-        $verifier = new JwtVerifier(self::JWKS_URI, $httpClient, $requestFactory);
-        $verifier->preloadJwks($this->buildJwks());
-
-        // DE: Cache-Timestamp auf abgelaufen setzen (> 600 Sekunden her)
-        // EN: Set cache timestamp to expired (> 600 seconds ago)
-        $reflection = new \ReflectionClass($verifier);
-        $timestampProp = $reflection->getProperty('jwksCacheTimestamp');
-        $timestampProp->setValue($verifier, time() - 601);
-
-        // DE: HTTP-Client gibt frische JWKS zurück
-        // EN: HTTP client returns fresh JWKS
         $response = $this->createStub(ResponseInterface::class);
         $response->method('getStatusCode')->willReturn(200);
         $body = $this->createStub(StreamInterface::class);
@@ -231,8 +269,13 @@ final class JwtVerifierTest extends TestCase
         $response->method('getBody')->willReturn($body);
         $httpClient->method('sendRequest')->willReturn($response);
 
-        // DE: fetchAndCacheJwks() sollte über HTTP neu laden (nicht aus Cache)
-        // EN: fetchAndCacheJwks() should refetch via HTTP (not from cache)
+        $verifier = new JwtVerifier(
+            jwksUri: self::JWKS_URI,
+            httpClient: $httpClient,
+            requestFactory: $requestFactory,
+            // DE: Kein Cache // EN: No cache
+        );
+
         $jwks = $verifier->fetchAndCacheJwks();
 
         $this->assertArrayHasKey('keys', $jwks);
@@ -240,65 +283,20 @@ final class JwtVerifierTest extends TestCase
     }
 
     #[Test]
-    public function fetchJwksUsesCacheBeforeTtlExpired(): void
+    public function invalidateJwksCacheDeletesFromCache(): void
     {
-        // DE: HTTP-Client sollte NICHT aufgerufen werden
-        // EN: HTTP client should NOT be called
-        $httpClient = $this->createMock(ClientInterface::class);
-        $httpClient->expects($this->never())->method('sendRequest');
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->expects($this->once())->method('delete')->with(self::CACHE_KEY);
 
-        $requestFactory = $this->createStub(RequestFactoryInterface::class);
+        $verifier = new JwtVerifier(
+            jwksUri: self::JWKS_URI,
+            httpClient: $this->createStub(ClientInterface::class),
+            requestFactory: $this->createStub(RequestFactoryInterface::class),
+            cache: $cache,
+            cacheKey: self::CACHE_KEY,
+        );
 
-        $verifier = new JwtVerifier(self::JWKS_URI, $httpClient, $requestFactory);
-        $verifier->preloadJwks($this->buildJwks());
-
-        // DE: Cache ist frisch → kein HTTP-Request
-        // EN: Cache is fresh → no HTTP request
-        $jwks = $verifier->fetchAndCacheJwks();
-
-        $this->assertArrayHasKey('keys', $jwks);
-    }
-
-    // ── Preload + State ──────────────────────────────────────────────
-
-    #[Test]
-    public function preloadJwksThrowsOnInvalidFormat(): void
-    {
-        $verifier = $this->createVerifierWithPreloadedJwks();
-
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Invalid JWKS format');
-
-        $verifier->preloadJwks(['invalid' => 'data']);
-    }
-
-    #[Test]
-    public function hasJwksLoadedReturnsFalseInitially(): void
-    {
-        $httpClient = $this->createStub(ClientInterface::class);
-        $requestFactory = $this->createStub(RequestFactoryInterface::class);
-
-        $verifier = new JwtVerifier(self::JWKS_URI, $httpClient, $requestFactory);
-
-        $this->assertFalse($verifier->hasJwksLoaded());
-    }
-
-    #[Test]
-    public function hasJwksLoadedReturnsTrueAfterPreload(): void
-    {
-        $verifier = $this->createVerifierWithPreloadedJwks();
-
-        $this->assertTrue($verifier->hasJwksLoaded());
-    }
-
-    #[Test]
-    public function invalidateJwksCacheClearsCache(): void
-    {
-        $verifier = $this->createVerifierWithPreloadedJwks();
-
-        $this->assertTrue($verifier->hasJwksLoaded());
         $verifier->invalidateJwksCache();
-        $this->assertFalse($verifier->hasJwksLoaded());
     }
 
     // ── Helper Methods ───────────────────────────────────────────────
@@ -311,34 +309,22 @@ final class JwtVerifierTest extends TestCase
         return ['keys' => $keys ?? [$this->jwk]];
     }
 
-    private function createVerifierWithPreloadedJwks(): JwtVerifier
-    {
-        $httpClient = $this->createStub(ClientInterface::class);
-        $requestFactory = $this->createStub(RequestFactoryInterface::class);
-
-        $verifier = new JwtVerifier(self::JWKS_URI, $httpClient, $requestFactory);
-        $verifier->preloadJwks($this->buildJwks());
-
-        return $verifier;
-    }
-
     /**
-     * DE: Erstellt einen JwtVerifier mit HTTP-Mock der die gegebenen JWKS zurückgibt.
-     * EN: Creates a JwtVerifier with HTTP mock that returns the given JWKS.
+     * DE: Erstellt einen JwtVerifier mit Cache-Mock der JWKS zurückgibt.
+     * EN: Creates a JwtVerifier with cache mock that returns JWKS.
      */
-    private function createVerifierWithHttpMock(array $jwks): JwtVerifier
+    private function createVerifierWithCachedJwks(): JwtVerifier
     {
-        $httpClient = $this->createStub(ClientInterface::class);
-        $requestFactory = $this->createMockRequestFactory();
+        $cache = $this->createMock(CacheInterface::class);
+        $cache->method('get')->willReturn($this->buildJwks());
 
-        $response = $this->createStub(ResponseInterface::class);
-        $response->method('getStatusCode')->willReturn(200);
-        $body = $this->createStub(StreamInterface::class);
-        $body->method('__toString')->willReturn(json_encode($jwks));
-        $response->method('getBody')->willReturn($body);
-        $httpClient->method('sendRequest')->willReturn($response);
-
-        return new JwtVerifier(self::JWKS_URI, $httpClient, $requestFactory);
+        return new JwtVerifier(
+            jwksUri: self::JWKS_URI,
+            httpClient: $this->createStub(ClientInterface::class),
+            requestFactory: $this->createStub(RequestFactoryInterface::class),
+            cache: $cache,
+            cacheKey: self::CACHE_KEY,
+        );
     }
 
     private function createMockRequestFactory(): RequestFactoryInterface

@@ -9,6 +9,8 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Contracts\Cache\CacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 
 /**
  * DE: Verifiziert JWT-Signaturen gegen JWKS vom Identity Provider.
@@ -18,13 +20,8 @@ use Psr\Log\NullLogger;
  */
 final class JwtVerifier
 {
-    private const JWKS_CACHE_TTL_SECONDS = 600; // DE: 10 Minuten // EN: 10 minutes
     private const SUPPORTED_ALGORITHM = 'RS256';
-
-    /** @var array<string, mixed>|null */
-    private ?array $jwksCache = null;
-
-    private ?int $jwksCacheTimestamp = null;
+    private const DEFAULT_CACHE_TTL = 600; // DE: 10 Minuten // EN: 10 minutes
 
     private LoggerInterface $logger;
 
@@ -33,6 +30,9 @@ final class JwtVerifier
         private readonly ClientInterface $httpClient,
         private readonly RequestFactoryInterface $requestFactory,
         ?LoggerInterface $logger = null,
+        private readonly ?CacheInterface $cache = null,
+        private readonly ?string $cacheKey = null,
+        private readonly int $cacheTtl = self::DEFAULT_CACHE_TTL,
     ) {
         $this->logger = $logger ?? new NullLogger();
     }
@@ -70,23 +70,6 @@ final class JwtVerifier
     }
 
     /**
-     * DE: Lädt JWKS vorab (für Cache-Warmup).
-     * EN: Preloads JWKS data (for cache warmup).
-     *
-     * @param array<string, mixed> $jwks
-     */
-    public function preloadJwks(array $jwks): void
-    {
-        if (!isset($jwks['keys']) || !is_array($jwks['keys'])) {
-            throw new \InvalidArgumentException('Invalid JWKS format: missing keys array');
-        }
-
-        $this->jwksCache = $jwks;
-        $this->jwksCacheTimestamp = time();
-        $this->logger->debug('JWKS preloaded', ['keys_count' => count($jwks['keys'])]);
-    }
-
-    /**
      * DE: Ruft JWKS ab und gibt sie zurück (für Cache-Warmup).
      * EN: Fetches JWKS and returns them (for cache warmup).
      *
@@ -99,22 +82,14 @@ final class JwtVerifier
     }
 
     /**
-     * DE: Prüft ob JWKS bereits geladen sind.
-     * EN: Checks if JWKS are already loaded.
-     */
-    public function hasJwksLoaded(): bool
-    {
-        return $this->jwksCache !== null;
-    }
-
-    /**
      * DE: Invalidiert den JWKS-Cache (erzwingt erneuten Abruf).
      * EN: Invalidates the JWKS cache (forces re-fetch).
      */
     public function invalidateJwksCache(): void
     {
-        $this->jwksCache = null;
-        $this->jwksCacheTimestamp = null;
+        if ($this->cache !== null && $this->cacheKey !== null) {
+            $this->cache->delete($this->cacheKey);
+        }
         $this->logger->debug('JWKS cache invalidated');
     }
 
@@ -161,27 +136,39 @@ final class JwtVerifier
     }
 
     /**
+     * DE: Lädt JWKS aus Cache oder vom IdP.
+     * EN: Loads JWKS from cache or from IdP.
+     *
      * @return array<string, mixed>
      * @throws OidcProtocolException
      */
     private function fetchJwks(): array
     {
-        // DE: Cache-Invalidierung nach TTL // EN: Cache invalidation after TTL
-        if ($this->jwksCache !== null && $this->jwksCacheTimestamp !== null) {
-            if (time() > $this->jwksCacheTimestamp + self::JWKS_CACHE_TTL_SECONDS) {
-                $this->logger->debug('JWKS cache expired, refetching');
-                $this->jwksCache = null;
-                $this->jwksCacheTimestamp = null;
-            } else {
-                return $this->jwksCache;
-            }
+        // DE: Mit Symfony-Cache // EN: With Symfony cache
+        if ($this->cache !== null && $this->cacheKey !== null) {
+            /** @var array<string, mixed> */
+            return $this->cache->get($this->cacheKey, function (ItemInterface $item): array {
+                $item->expiresAfter($this->cacheTtl);
+
+                return $this->doFetchJwks();
+            });
         }
 
-        if ($this->jwksCache !== null) {
-            return $this->jwksCache;
-        }
+        // DE: Ohne Cache (Fallback für Tests oder einfache Nutzung)
+        // EN: Without cache (fallback for tests or simple usage)
+        return $this->doFetchJwks();
+    }
 
-        $this->logger->debug('Fetching JWKS', ['uri' => $this->jwksUri]);
+    /**
+     * DE: Führt den HTTP-Request für JWKS durch.
+     * EN: Performs the HTTP request for JWKS.
+     *
+     * @return array<string, mixed>
+     * @throws OidcProtocolException
+     */
+    private function doFetchJwks(): array
+    {
+        $this->logger->debug('Fetching JWKS from IdP', ['uri' => $this->jwksUri]);
 
         $request = $this->requestFactory->createRequest('GET', $this->jwksUri)
             ->withHeader('Accept', 'application/json');
@@ -198,8 +185,7 @@ final class JwtVerifier
             throw new OidcProtocolException('Invalid JWKS response');
         }
 
-        $this->jwksCache = $data;
-        $this->jwksCacheTimestamp = time();
+        $this->logger->info('JWKS fetched successfully', ['keys_count' => count($data['keys'])]);
 
         return $data;
     }

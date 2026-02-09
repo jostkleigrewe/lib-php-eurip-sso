@@ -7,6 +7,7 @@ namespace Jostkleigrewe\Sso\Bundle\Factory;
 use Jostkleigrewe\Sso\Client\JwtVerifier;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Jostkleigrewe\Sso\Contracts\DTO\DiscoveryDocument;
+use Jostkleigrewe\Sso\Contracts\Exception\InsecureUrlException;
 use Jostkleigrewe\Sso\Contracts\Exception\OidcProtocolException;
 use Jostkleigrewe\Sso\Contracts\Oidc\OidcClientConfig;
 use Psr\Http\Client\ClientInterface;
@@ -41,6 +42,7 @@ final class OidcClientFactory
         ?CacheInterface $cache = null,
         int $cacheTtl = self::CACHE_TTL,
         ?LoggerInterface $logger = null,
+        bool $requireHttps = true,
     ): OidcClient {
         $config = self::fetchConfig(
             issuer: $issuer,
@@ -53,18 +55,39 @@ final class OidcClientFactory
             cache: $cache,
             cacheTtl: $cacheTtl,
             logger: $logger,
+            requireHttps: $requireHttps,
         );
 
-        // DE: JwtVerifier erzeugen (für JWT-Signatur-Validierung via JWKS)
-        // EN: Create JwtVerifier (for JWT signature validation via JWKS)
-        $jwtVerifier = new JwtVerifier($config->jwksUri, $httpClient, $requestFactory, $logger);
+        // DE: JwtVerifier mit Cache erzeugen (für JWT-Signatur-Validierung via JWKS)
+        // EN: Create JwtVerifier with cache (for JWT signature validation via JWKS)
+        $jwksCacheKey = $cache !== null && $config->jwksUri !== ''
+            ? self::buildJwksCacheKey($config->jwksUri)
+            : null;
+
+        $jwtVerifier = new JwtVerifier(
+            jwksUri: $config->jwksUri,
+            httpClient: $httpClient,
+            requestFactory: $requestFactory,
+            logger: $logger,
+            cache: $cache,
+            cacheKey: $jwksCacheKey,
+            cacheTtl: self::JWKS_CACHE_TTL,
+        );
 
         $client = new OidcClient($config, $httpClient, $requestFactory, $streamFactory, $jwtVerifier, $logger);
 
-        // DE: JWKS vorab laden und cachen (für JWT-Signatur-Validierung)
-        // EN: Preload and cache JWKS (for JWT signature validation)
-        if ($cache !== null && $config->jwksUri !== '') {
-            self::preloadJwks($jwtVerifier, $config->jwksUri, $httpClient, $requestFactory, $cache, $logger);
+        // DE: JWKS vorab laden (optional, füllt Cache für schnellere erste Anfrage)
+        // EN: Preload JWKS (optional, fills cache for faster first request)
+        if ($jwksCacheKey !== null) {
+            try {
+                $jwtVerifier->fetchAndCacheJwks();
+            } catch (\Throwable $e) {
+                // DE: Bei Fehlern nicht abbrechen - JWKS werden on-demand geladen
+                // EN: Don't fail on errors - JWKS will be loaded on-demand
+                $logger?->warning('Failed to preload JWKS, will load on-demand', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         return $client;
@@ -77,57 +100,6 @@ final class OidcClientFactory
     public static function buildJwksCacheKey(string $jwksUri): string
     {
         return sprintf('eurip_sso.jwks.%s.%s', self::CACHE_VERSION, hash('xxh3', $jwksUri));
-    }
-
-    /**
-     * DE: Lädt JWKS aus Cache oder vom IdP und übergibt sie an den Client.
-     * EN: Loads JWKS from cache or IdP and passes them to the client.
-     */
-    private static function preloadJwks(
-        JwtVerifier $jwtVerifier,
-        string $jwksUri,
-        ClientInterface $httpClient,
-        RequestFactoryInterface $requestFactory,
-        CacheInterface $cache,
-        ?LoggerInterface $logger,
-    ): void {
-        $cacheKey = self::buildJwksCacheKey($jwksUri);
-
-        try {
-            /** @var array<string, mixed> $jwks */
-            $jwks = $cache->get($cacheKey, static function (ItemInterface $item) use ($jwksUri, $httpClient, $requestFactory, $logger): array {
-                $item->expiresAfter(self::JWKS_CACHE_TTL);
-
-                $logger?->debug('Fetching JWKS for cache', ['uri' => $jwksUri]);
-
-                $request = $requestFactory->createRequest('GET', $jwksUri)
-                    ->withHeader('Accept', 'application/json');
-
-                $response = $httpClient->sendRequest($request);
-
-                if ($response->getStatusCode() !== 200) {
-                    throw new OidcProtocolException('JWKS request failed: ' . $response->getStatusCode());
-                }
-
-                $data = json_decode((string) $response->getBody(), true);
-
-                if (!is_array($data) || !isset($data['keys'])) {
-                    throw new OidcProtocolException('Invalid JWKS response');
-                }
-
-                $logger?->info('JWKS cached successfully', ['keys_count' => count($data['keys'])]);
-
-                return $data;
-            });
-
-            $jwtVerifier->preloadJwks($jwks);
-        } catch (\Throwable $e) {
-            // DE: Bei Fehlern nicht abbrechen - JWKS werden on-demand geladen
-            // EN: Don't fail on errors - JWKS will be loaded on-demand
-            $logger?->warning('Failed to preload JWKS, will load on-demand', [
-                'error' => $e->getMessage(),
-            ]);
-        }
     }
 
     /**
@@ -144,9 +116,10 @@ final class OidcClientFactory
         ?CacheInterface $cache,
         int $cacheTtl,
         ?LoggerInterface $logger,
+        bool $requireHttps,
     ): OidcClientConfig {
-        $fetchDiscovery = static function () use ($issuer, $clientId, $redirectUri, $clientSecret, $publicIssuer, $httpClient, $requestFactory, $logger): OidcClientConfig {
-            return self::fetchDiscovery($issuer, $clientId, $redirectUri, $clientSecret, $publicIssuer, $httpClient, $requestFactory, $logger);
+        $fetchDiscovery = static function () use ($issuer, $clientId, $redirectUri, $clientSecret, $publicIssuer, $httpClient, $requestFactory, $logger, $requireHttps): OidcClientConfig {
+            return self::fetchDiscovery($issuer, $clientId, $redirectUri, $clientSecret, $publicIssuer, $httpClient, $requestFactory, $logger, $requireHttps);
         };
 
         if ($cache === null) {
@@ -194,6 +167,7 @@ final class OidcClientFactory
 
     /**
      * @throws OidcProtocolException
+     * @throws InsecureUrlException
      */
     private static function fetchDiscovery(
         string $issuer,
@@ -204,9 +178,13 @@ final class OidcClientFactory
         ClientInterface $httpClient,
         RequestFactoryInterface $requestFactory,
         ?LoggerInterface $logger,
+        bool $requireHttps,
     ): OidcClientConfig {
         // DE: HTTPS-Validierung für Issuer // EN: HTTPS validation for issuer
         if (!self::isSecureUrl($issuer)) {
+            if ($requireHttps) {
+                throw InsecureUrlException::forIssuer($issuer);
+            }
             $logger?->warning('Insecure issuer URL detected - HTTPS is required in production', [
                 'issuer' => $issuer,
             ]);
@@ -269,6 +247,9 @@ final class OidcClientFactory
 
         foreach ($criticalEndpoints as $name => $url) {
             if ($url !== '' && !self::isSecureUrl($url)) {
+                if ($requireHttps) {
+                    throw InsecureUrlException::forEndpoint($name, $url);
+                }
                 $logger?->warning('Insecure endpoint detected - HTTPS is required in production', [
                     'endpoint' => $name,
                     'url' => $url,

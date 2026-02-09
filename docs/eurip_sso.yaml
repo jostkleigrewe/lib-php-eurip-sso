@@ -1,4 +1,4 @@
-# EURIP SSO Bundle - Example Configuration
+# EURIP SSO Bundle - Example Configuration (v0.3.x)
 # Copy this file to your Symfony app: config/packages/eurip_sso.yaml
 #
 # DE: Beispiel-Konfiguration für das EURIP SSO Bundle.
@@ -41,7 +41,16 @@ eurip_sso:
         - email
 
     # ============================================================
-    # CACHE - Discovery document caching
+    # SECURITY
+    # ============================================================
+
+    # Require HTTPS for all OIDC endpoints (issuer, token, jwks, userinfo)
+    # IMPORTANT: Only set to false for local development!
+    # Allowed non-HTTPS: localhost, 127.0.0.1, [::1], host.docker.internal
+    require_https: true
+
+    # ============================================================
+    # CACHE - Discovery document and JWKS caching
     # ============================================================
 
     cache:
@@ -50,41 +59,32 @@ eurip_sso:
         pool: cache.app     # Symfony cache pool to use
 
     # ============================================================
-    # AUTHENTICATOR - Legacy settings for custom implementations
+    # AUTHENTICATOR - Symfony Security Integration
     # ============================================================
 
-    # These settings are used when building your own controller.
-    # When using controller.enabled: true, use the 'routes' section instead.
     authenticator:
-        callback_route: /auth/callback
-        default_target_path: /
-        login_path: /login
+        enabled: true            # Register OidcAuthenticator for Symfony Security
         verify_signature: true   # SECURITY: Always keep this enabled!
 
     # ============================================================
-    # CONTROLLER - Zero-Code Integration
+    # ROUTES - Authentication Endpoints
     # ============================================================
 
-    # Enable bundle-provided authentication controller
-    controller:
-        enabled: true
-        firewall: main           # Symfony firewall name (must match security.yaml)
-
-    # Route paths for the authentication flow
     # NOTE: Logout is POST-only and requires CSRF token!
     routes:
-        login: /auth/login          # Start SSO login
-        callback: /auth/callback    # OIDC callback endpoint
-        logout: /auth/logout        # Logout endpoint
-        after_login: /              # Redirect after successful login
-        after_logout: /             # Redirect after logout
+        login: /auth/login              # Start SSO login
+        callback: /auth/callback        # OIDC callback endpoint
+        logout: /auth/logout            # Logout endpoint (POST with CSRF!)
+        logout_confirm: /auth/logout/confirm  # Optional: GET page with logout button
+        after_login: /                  # Redirect after successful login
+        after_logout: /                 # Redirect after logout
 
-        # Optional routes (set to enable)
-        profile: /auth/profile      # User profile page
-        debug: /auth/debug          # OIDC configuration debug page
-        # test: /auth/test          # Auth workflow test page (dev only!)
+        # Optional routes (set to null to disable)
+        profile: /auth/profile          # User profile page
+        debug: /auth/debug              # OIDC configuration debug page
+        test: /auth/test                # Auth workflow test page
 
-        # OpenID Connect Logout Extensions
+        # OpenID Connect Logout Extensions (optional)
         # backchannel_logout: /auth/backchannel-logout   # POST endpoint
         # frontchannel_logout: /auth/frontchannel-logout # GET endpoint (iframe)
 
@@ -111,7 +111,7 @@ eurip_sso:
 
         # Sync additional claims to entity properties
         # Format: 'claim_name': 'entityProperty'
-        claims_sync:
+        claims_sync: {}
             # name: displayName
             # locale: preferredLanguage
             # picture: avatarUrl
@@ -129,15 +129,6 @@ eurip_sso:
         # Auto-create users on first login
         auto_create: true
 
-    # ============================================================
-    # CLIENT SERVICES - Runtime Access to SSO Data
-    # ============================================================
-
-    # Enable services for accessing claims, permissions, and API
-    client_services:
-        enabled: true
-        store_access_token: true   # Store access token for API calls
-
 # ================================================================
 # SECURITY.YAML - Required Configuration
 # ================================================================
@@ -153,43 +144,34 @@ eurip_sso:
 #         main:
 #             lazy: true
 #             provider: app_user_provider
-#             # The bundle handles authentication via session
-#             custom_authenticator: App\Security\NoopAuthenticator
+#             custom_authenticators:
+#                 - Jostkleigrewe\Sso\Bundle\Security\OidcAuthenticator
 #
 # ================================================================
-# ROUTES.YAML - Import Bundle Routes
+# USER ENTITY - Required Properties
 # ================================================================
 #
-# Add this to your config/routes.yaml:
-#
-# eurip_sso:
-#     resource: '@EuripSsoBundle/config/routes.yaml'
-#
-# Or if using route loader (automatic when controller.enabled: true):
-#
-# eurip_sso:
-#     resource: .
-#     type: eurip_sso
-#
-# ================================================================
-# USER ENTITY - Required Interface
-# ================================================================
-#
-# Your User entity must implement OidcUserInterface or have the mapped properties:
+# Your User entity must have properties matching the mapping config:
 #
 # class User implements UserInterface
 # {
-#     #[ORM\Column(length: 255, nullable: true)]
+#     #[ORM\Column(length: 255)]
 #     private ?string $oidcSubject = null;
 #
-#     #[ORM\Column(length: 255, nullable: true)]
+#     #[ORM\Column(length: 255)]
 #     private ?string $oidcIssuer = null;
+#
+#     #[ORM\Column(type: 'json')]
+#     private array $roles = ['ROLE_USER'];
+#
+#     #[ORM\Column(type: 'json')]
+#     private array $externalRoles = [];
 #
 #     // ... getters and setters
 # }
 #
 # ================================================================
-# EVENTS - Customize the Auth Flow
+# EVENTS - Customize the Auth Flow (class-based dispatch)
 # ================================================================
 #
 # Available events (9 total):
@@ -203,9 +185,9 @@ eurip_sso:
 #   - OidcBackchannelLogoutEvent   Back-channel logout received
 #   - OidcFrontchannelLogoutEvent  Front-channel logout received
 #
-# Example listener:
+# Example listener (v0.3.x uses class-based dispatch):
 #
-# #[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
+# #[AsEventListener]
 # class AddAdminRoleListener
 # {
 #     public function __invoke(OidcLoginSuccessEvent $event): void
