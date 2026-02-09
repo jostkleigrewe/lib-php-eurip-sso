@@ -154,12 +154,18 @@ final class AuthenticationController extends AbstractController
     }
 
     /**
-     * DE: Führt den Logout durch (nur POST mit CSRF-Token).
-     * EN: Performs logout (POST only with CSRF token).
+     * DE: Führt den Logout durch (POST mit CSRF-Token) oder leitet zur Bestätigung (GET).
+     * EN: Performs logout (POST with CSRF token) or redirects to confirmation (GET).
      */
-    #[Route('%eurip_sso.routes.logout%', name: OidcConstants::ROUTE_LOGOUT, methods: ['POST'])]
+    #[Route('%eurip_sso.routes.logout%', name: OidcConstants::ROUTE_LOGOUT, methods: ['GET', 'POST'])]
     public function logout(Request $request): Response
     {
+        // DE: Bei GET → zur Bestätigungsseite weiterleiten
+        // EN: On GET → redirect to confirmation page
+        if ($request->isMethod('GET')) {
+            return $this->redirectToRoute(OidcConstants::ROUTE_LOGOUT_CONFIRM);
+        }
+
         // DE: CSRF-Token validieren um Logout-CSRF zu verhindern
         // EN: Validate CSRF token to prevent logout CSRF attacks
         $csrfToken = $request->request->getString('_csrf_token');

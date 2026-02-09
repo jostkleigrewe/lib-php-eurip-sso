@@ -39,6 +39,13 @@ eurip_sso:
         logout_success: "Erfolgreich abgemeldet."
         welcome: "Willkommen, %name%!"
 
+    # Logout confirmation page
+    logout:
+        confirm_subtitle: "Möchten Sie sich wirklich abmelden?"
+        confirm_message: "Sie sind derzeit angemeldet als:"
+        button: "Ja, abmelden"
+        cancel: "Abbrechen"
+
     # UI Labels (optional, for templates)
     ui:
         login: "Anmelden"

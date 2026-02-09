@@ -39,6 +39,13 @@ eurip_sso:
         logout_success: "Successfully logged out."
         welcome: "Welcome, %name%!"
 
+    # Logout confirmation page
+    logout:
+        confirm_subtitle: "Are you sure you want to log out?"
+        confirm_message: "You are currently logged in as:"
+        button: "Yes, log me out"
+        cancel: "Cancel"
+
     # UI Labels (optional, for templates)
     ui:
         login: "Log in"
