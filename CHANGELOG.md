@@ -3,6 +3,103 @@
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-08
+
+### BREAKING CHANGES
+
+**Removed Config Options**
+- `controller.enabled` - Controllers are now always active (registered via resource scanning)
+- `client_services.enabled` / `client_services.store_access_token` - Services are now always auto-registered
+- `authenticator.callback_route` / `authenticator.default_target_path` / `authenticator.login_path` - Removed legacy authenticator options
+
+**Removed Classes**
+- `EuripSsoFacade` - Use direct service injection instead
+- `OidcController` - Split into `AuthenticationController`, `ProfileController`, `DiagnosticsController`
+- `OidcRouteLoader` - Routes now use `#[Route]` attributes with `%parameter%` placeholders
+
+**Removed Constants**
+- `::NAME` constants from all event classes - Use class-based dispatch (Symfony standard: `#[AsEventListener]` without `event:` parameter)
+
+**Removed Service Aliases**
+- `eurip_sso.facade`, `eurip_sso.claims`, `eurip_sso.auth`, `eurip_sso.api`, `eurip_sso.token_storage` - Use FQCN injection instead
+
+**Removed Methods**
+- `OidcClient::fromDiscovery()` - Use `OidcClientFactory::create()` or construct `OidcClient` directly
+- `OidcClient::preloadJwks()`, `fetchAndCacheJwks()`, `hasJwksLoaded()`, `invalidateJwksCache()` - Moved to `JwtVerifier`
+
+**Changed Constructor**
+- `OidcClient::__construct()` now requires `JwtVerifier` as 5th parameter (before optional `$logger`)
+
+### Added
+
+**JwtVerifier (extracted from OidcClient)**
+- `JwtVerifier` - Dedicated class for JWT signature verification via JWKS
+  - `verifySignature()` - RS256 signature verification with key-rotation resilience
+  - `preloadJwks()` / `fetchAndCacheJwks()` / `hasJwksLoaded()` / `invalidateJwksCache()` - JWKS cache management
+  - Automatic retry on key rotation (cache invalidate → refetch → verify)
+  - Framework-agnostic (PSR-18 HTTP, PSR-17 Request Factory, PSR-3 Logger)
+- Registered as Symfony service via `OidcClient::getJwtVerifier()` factory method
+
+**Controller Split**
+- `AuthenticationController` - Login, callback, logout, logout confirmation
+- `ProfileController` - User profile page
+- `DiagnosticsController` - Debug and test pages
+- `BackchannelLogoutController` - OIDC Back-Channel Logout endpoint (POST)
+- `FrontchannelLogoutController` - OIDC Front-Channel Logout endpoint (GET, iframe)
+
+**New Exceptions**
+- `OidcAuthenticationException` - Structured auth errors with `OidcErrorCode` enum
+- `OidcErrorCode` - Enum: `INVALID_STATE`, `MISSING_CODE`, `TOKEN_EXCHANGE_FAILED`, `INVALID_ID_TOKEN`, `CLAIMS_VALIDATION_FAILED`, `PROVIDER_ERROR`
+
+**New Services**
+- `OidcAuthenticationService` - Business logic extracted from controller (login initiation, callback handling)
+- `SsoClaims` DTO - Structured claims access
+
+**Console Commands**
+- `eurip:sso:cache-warmup` - Pre-fetch and cache OIDC discovery document + JWKS
+- `eurip:sso:test-connection` - Test connection to the OIDC provider
+
+**Configuration**
+- `routes.logout_confirm` - GET endpoint for logout confirmation page (default: `/auth/logout/confirm`)
+- Routes now have sensible defaults: `profile: /auth/profile`, `debug: /auth/debug`, `test: /auth/test`
+
+### Changed
+
+**Service Registration**
+- Services now auto-registered via `config/services.yaml` resource scanning
+- Scalar parameters resolved via `#[Autowire('%eurip_sso.param%')]` attributes
+- No more manual service wiring in bundle extension
+
+**Event Dispatch**
+- All events now use class-based dispatch (Symfony standard)
+- Event listeners use `#[AsEventListener]` without `event:` parameter
+- Event class is inferred from the `__invoke()` type hint
+
+**Authenticator**
+- `OidcAuthenticator` now uses `SelfValidatingPassport` with `UserBadge`
+- `authenticator.enabled` is the only remaining toggle (default: `true`)
+
+**Routes**
+- Routes registered via `#[Route('%eurip_sso.routes.login%')]` attributes on controllers
+- No more dynamic route loader (`OidcRouteLoader` removed)
+- Route names unchanged: `eurip_sso_login`, `eurip_sso_callback`, `eurip_sso_logout`, etc.
+
+**OidcClientFactory**
+- `create()` now creates `JwtVerifier` and passes it to `OidcClient`
+- `preloadJwks()` now accepts `JwtVerifier` instead of `OidcClient`
+
+### Fixed
+
+- Bundle now uses its own `vendor/autoload.php` for tests (not parent project's)
+
+### Tests
+
+- 63 tests total (48 OidcClient + 15 JwtVerifier), all passing
+- JwtVerifier tests use real 2048-bit RSA key pairs
+- Tests cover: signature verification, key rotation, cache TTL, algorithm validation
+
+---
+
 ## [0.2.2] - 2026-02-07
 
 ### Added

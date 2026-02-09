@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Jostkleigrewe\Sso\Bundle\Controller;
 
 use Jostkleigrewe\Sso\Bundle\Event\OidcBackchannelLogoutEvent;
+use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Jostkleigrewe\Sso\Contracts\Exception\ClaimsValidationException;
 use Jostkleigrewe\Sso\Contracts\Exception\OidcProtocolException;
@@ -12,6 +13,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -48,6 +50,7 @@ final class BackchannelLogoutController extends AbstractController
      * - 400: Invalid request (missing token, invalid format)
      * - 501: Not implemented (if backchannel logout not supported)
      */
+    #[Route('%eurip_sso.routes.backchannel_logout%', name: OidcConstants::ROUTE_BACKCHANNEL_LOGOUT, methods: ['POST'])]
     public function backchannelLogout(Request $request): Response
     {
         // DE: Logout Token aus Request extrahieren
@@ -90,7 +93,7 @@ final class BackchannelLogoutController extends AbstractController
                 claims: $claims,
             );
 
-            $this->eventDispatcher->dispatch($event, OidcBackchannelLogoutEvent::NAME);
+            $this->eventDispatcher->dispatch($event);
 
             if ($event->isHandled()) {
                 $this->logger?->info('Back-channel logout handled by listener', [

@@ -12,7 +12,8 @@ OIDC Client Library and Symfony Bundle for Single Sign-On.
 - Dual-URL Support (internal/public issuer for Docker/K8s)
 - Automatic User Provisioning with Doctrine
 - Hybrid User Strategy (sync SSO data, preserve local data)
-- Extensive Event System (9 events)
+- Extensive Event System (9 events, class-based dispatch)
+- JWT Signature Verification via dedicated `JwtVerifier` with key-rotation resilience
 - PSR-3 Logging, PSR-18 HTTP Client
 - **Security**: JWT signature verification, timing-safe comparisons, open redirect protection
 
@@ -44,16 +45,13 @@ eurip_sso:
     client_id: '%env(OIDC_CLIENT_ID)%'
     redirect_uri: '%env(APP_URL)%/auth/callback'
 
-    controller:
-        enabled: true
-
     routes:
         login: /auth/login
         callback: /auth/callback
         logout: /auth/logout
         after_login: /
-        profile: /auth/profile    # optional
-        debug: /auth/debug        # optional
+        profile: /auth/profile
+        debug: /auth/debug
 
     user_provider:
         enabled: true
@@ -81,27 +79,126 @@ security:
         main:
             lazy: true
             provider: app_user_provider
-            custom_authenticator: App\Security\NoopAuthenticator
+            custom_authenticators:
+                - Jostkleigrewe\Sso\Bundle\Security\OidcAuthenticator
 ```
 
 **Done!** Routes available:
 - `/auth/login` - Start login (GET)
 - `/auth/callback` - SSO callback (GET)
 - `/auth/logout` - Logout (POST with CSRF token)
+- `/auth/logout/confirm` - Logout confirmation page (GET, optional)
 - `/auth/profile` - User profile (GET)
 - `/auth/debug` - OIDC config (GET)
+- `/auth/test` - Auth test page (GET)
 
 **Important:** The logout route requires POST with CSRF token:
 ```twig
+{# Option A: Twig Component (recommended) #}
+<twig:EuripSso:Logout />
+
+{# Option B: Manual form #}
 <form action="{{ path('eurip_sso_logout') }}" method="POST">
     <input type="hidden" name="_csrf_token" value="{{ csrf_token('eurip_sso_logout') }}">
     <button type="submit">Logout</button>
 </form>
 ```
 
+## Architecture
+
+### Controllers
+
+The bundle provides three controllers, registered via `#[Route]` attributes with configurable paths:
+
+| Controller | Routes | Purpose |
+|------------|--------|---------|
+| `AuthenticationController` | login, callback, logout, logout_confirm | Core auth flow |
+| `ProfileController` | profile | User profile page |
+| `DiagnosticsController` | debug, test | Debug & test pages |
+
+### Services
+
+All services are auto-registered via resource scanning. Inject them directly:
+
+```php
+use Jostkleigrewe\Sso\Bundle\Service\EuripSsoClaimsService;
+use Jostkleigrewe\Sso\Bundle\Service\EuripSsoAuthorizationService;
+
+public function __construct(
+    private readonly EuripSsoAuthorizationService $auth,
+    private readonly EuripSsoClaimsService $claims,
+) {}
+
+public function edit(): Response
+{
+    // Require permission (throws PermissionDeniedException if missing)
+    $this->auth->requirePermission('edit:article');
+
+    // Access claims
+    $email = $this->claims->getEmail();
+    $userId = $this->claims->getUserId();
+    $roles = $this->claims->getClientRoles();
+
+    // Check permissions
+    if ($this->auth->hasPermission('delete:article')) {
+        // ...
+    }
+}
+```
+
+#### Available Services
+
+| Service | Purpose |
+|---------|---------|
+| `EuripSsoClaimsService` | Access ID token claims |
+| `EuripSsoAuthorizationService` | Permission/role checks |
+| `EuripSsoApiClient` | API calls to SSO server |
+| `EuripSsoTokenStorage` | Token storage access |
+| `OidcClient` | Low-level OIDC client |
+| `JwtVerifier` | JWT signature verification |
+
+#### Authorization Methods
+
+```php
+// Check methods (return bool)
+$auth->hasRole('ROLE_ADMIN');
+$auth->hasClientRole('editor');
+$auth->hasPermission('edit:article');
+$auth->hasAnyPermission(['edit:article', 'delete:article']);
+$auth->hasAllPermissions(['view:article', 'edit:article']);
+$auth->isInGroup('editors');
+$auth->canAccess();  // Not blocked
+
+// Require methods (throw PermissionDeniedException)
+$auth->requireRole('ROLE_ADMIN');
+$auth->requirePermission('edit:article');
+$auth->requireAccess();
+```
+
+#### Claims Access
+
+```php
+// Standard claims
+$claims->getEmail();
+$claims->getName();
+$claims->getUserId();  // Subject
+$claims->getLocale();
+
+// Client-specific claims (EURIP SSO)
+$claims->getRoles();            // Global roles
+$claims->getClientRoles();      // Client-specific roles
+$claims->getClientPermissions();
+$claims->getClientGroups();
+$claims->isBlocked();
+
+// Generic access
+$claims->get('custom_claim', 'default');
+$claims->all();  // All claims as array
+```
+
 ## Extending via Events
 
-The bundle dispatches events at key points in the authentication flow, allowing customization without modifying bundle code.
+The bundle dispatches events at key points in the authentication flow. Events use **class-based dispatch** (Symfony standard).
 
 ### Event Overview
 
@@ -122,7 +219,7 @@ The bundle dispatches events at key points in the authentication flow, allowing 
 #### Add Roles Based on Claims
 
 ```php
-#[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
+#[AsEventListener]
 class AddAdminRoleListener
 {
     public function __invoke(OidcLoginSuccessEvent $event): void
@@ -138,7 +235,7 @@ class AddAdminRoleListener
 #### Block Users Based on Claims
 
 ```php
-#[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
+#[AsEventListener]
 class BlockInactiveUserListener
 {
     public function __invoke(OidcLoginSuccessEvent $event): void
@@ -153,7 +250,7 @@ class BlockInactiveUserListener
 #### Custom Redirect After Login
 
 ```php
-#[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
+#[AsEventListener]
 class RedirectNewUserListener
 {
     public function __invoke(OidcLoginSuccessEvent $event): void
@@ -169,7 +266,7 @@ class RedirectNewUserListener
 #### Send Welcome Email
 
 ```php
-#[AsEventListener(event: OidcUserCreatedEvent::NAME)]
+#[AsEventListener]
 class WelcomeEmailListener
 {
     public function __construct(private MailerInterface $mailer) {}
@@ -188,7 +285,7 @@ class WelcomeEmailListener
 #### Request Additional Scopes
 
 ```php
-#[AsEventListener(event: OidcPreLoginEvent::NAME)]
+#[AsEventListener]
 class AddScopesListener
 {
     public function __invoke(OidcPreLoginEvent $event): void
@@ -203,7 +300,7 @@ class AddScopesListener
 #### Skip SSO Logout (Local Only)
 
 ```php
-#[AsEventListener(event: OidcPreLogoutEvent::NAME)]
+#[AsEventListener]
 class LocalLogoutOnlyListener
 {
     public function __invoke(OidcPreLogoutEvent $event): void
@@ -217,7 +314,7 @@ class LocalLogoutOnlyListener
 #### Custom Error Page
 
 ```php
-#[AsEventListener(event: OidcLoginFailureEvent::NAME)]
+#[AsEventListener]
 class CustomErrorPageListener
 {
     public function __construct(private Environment $twig) {}
@@ -356,107 +453,6 @@ user_provider:
 | Need local + SSO roles | Custom entity with hybrid mapping |
 | Full user management | Custom entity implementing `UserInterface` |
 
-## Client Services
-
-The bundle provides optional client services for easy access to claims, authorization checks, and API calls.
-
-### Enable Client Services
-
-```yaml
-eurip_sso:
-    client_services:
-        enabled: true
-        store_access_token: true
-```
-
-### Available Services
-
-| Service | Alias | Purpose |
-|---------|-------|---------|
-| `EuripSsoClaimsService` | `eurip_sso.claims` | Access ID token claims |
-| `EuripSsoAuthorizationService` | `eurip_sso.auth` | Permission/role checks |
-| `EuripSsoApiClient` | `eurip_sso.api` | API calls to SSO server |
-| `EuripSsoTokenStorage` | `eurip_sso.token_storage` | Token storage access |
-| `EuripSsoFacade` | `eurip_sso.facade` | Combines all services |
-
-### Usage Examples
-
-```php
-// Direct service injection
-public function __construct(
-    private readonly EuripSsoAuthorizationService $auth,
-    private readonly EuripSsoClaimsService $claims,
-) {}
-
-public function edit(): Response
-{
-    // Require permission (throws PermissionDeniedException if missing)
-    $this->auth->requirePermission('edit:article');
-
-    // Access claims
-    $email = $this->claims->getEmail();
-    $userId = $this->claims->getUserId();
-    $roles = $this->claims->getClientRoles();
-
-    // Check permissions
-    if ($this->auth->hasPermission('delete:article')) {
-        // ...
-    }
-}
-
-// Or use the Facade
-public function __construct(private readonly EuripSsoFacade $sso) {}
-
-public function index(): Response
-{
-    $email = $this->sso->getEmail();
-    $isAdmin = $this->sso->hasRole('ROLE_ADMIN');
-
-    // Access nested services
-    $userInfo = $this->sso->api()->getUserInfo();
-    $allClaims = $this->sso->claims()->all();
-}
-```
-
-### Authorization Methods
-
-```php
-// Check methods (return bool)
-$auth->hasRole('ROLE_ADMIN');
-$auth->hasClientRole('editor');
-$auth->hasPermission('edit:article');
-$auth->hasAnyPermission(['edit:article', 'delete:article']);
-$auth->hasAllPermissions(['view:article', 'edit:article']);
-$auth->isInGroup('editors');
-$auth->canAccess();  // Not blocked
-
-// Require methods (throw PermissionDeniedException)
-$auth->requireRole('ROLE_ADMIN');
-$auth->requirePermission('edit:article');
-$auth->requireAccess();
-```
-
-### Claims Access
-
-```php
-// Standard claims
-$claims->getEmail();
-$claims->getName();
-$claims->getUserId();  // Subject
-$claims->getLocale();
-
-// Client-specific claims (EURIP SSO)
-$claims->getRoles();            // Global roles
-$claims->getClientRoles();      // Client-specific roles
-$claims->getClientPermissions();
-$claims->getClientGroups();
-$claims->isBlocked();
-
-// Generic access
-$claims->get('custom_claim', 'default');
-$claims->all();  // All claims as array
-```
-
 ## Configuration Reference
 
 ```yaml
@@ -476,26 +472,20 @@ eurip_sso:
         ttl: 3600
         pool: cache.app
 
-    # Legacy authenticator (for custom controller implementations)
     authenticator:
-        callback_route: /auth/callback
-        default_target_path: /
-        login_path: /login
+        enabled: true                # Register OidcAuthenticator for Symfony Security
         verify_signature: true       # JWT signature verification (recommended!)
-
-    controller:
-        enabled: false
-        firewall: main               # Symfony firewall name
 
     routes:
         login: /auth/login
         callback: /auth/callback
         logout: /auth/logout
+        logout_confirm: /auth/logout/confirm
         after_login: /
         after_logout: /
-        profile: null
-        debug: null
-        test: null
+        profile: /auth/profile
+        debug: /auth/debug
+        test: /auth/test
         # OpenID Connect Logout Extensions
         backchannel_logout: null    # POST endpoint for back-channel logout
         frontchannel_logout: null   # GET endpoint for front-channel logout (iframe)
@@ -514,33 +504,73 @@ eurip_sso:
         default_roles: [ROLE_USER]
         sync_on_login: true
         auto_create: true
-
-    client_services:
-        enabled: false
-        store_access_token: true
 ```
 
-See [docs/example-config.yaml](docs/example-config.yaml) for a complete example configuration.
+## Console Commands
+
+| Command | Purpose |
+|---------|---------|
+| `eurip:sso:cache-warmup` | Pre-fetch and cache OIDC discovery + JWKS |
+| `eurip:sso:test-connection` | Test connection to the OIDC provider |
 
 ## Standalone Usage
 
+The `OidcClient` and `JwtVerifier` can be used without the Symfony bundle:
+
 ```php
-$client = OidcClient::fromDiscovery(
-    issuer: 'https://sso.example.com',
+use Jostkleigrewe\Sso\Client\JwtVerifier;
+use Jostkleigrewe\Sso\Client\OidcClient;
+use Jostkleigrewe\Sso\Contracts\Oidc\OidcClientConfig;
+
+// Build config (e.g., from discovery document)
+$config = new OidcClientConfig(
     clientId: 'my-app',
+    issuer: 'https://sso.example.com',
+    authorizationEndpoint: 'https://sso.example.com/authorize',
+    tokenEndpoint: 'https://sso.example.com/token',
+    jwksUri: 'https://sso.example.com/.well-known/jwks.json',
     redirectUri: 'https://app.com/callback',
-    httpClient: $psrClient,
-    requestFactory: $requestFactory,
-    streamFactory: $streamFactory,
+    userInfoEndpoint: 'https://sso.example.com/userinfo',
 );
 
+$jwtVerifier = new JwtVerifier($config->jwksUri, $httpClient, $requestFactory);
+$client = new OidcClient($config, $httpClient, $requestFactory, $streamFactory, $jwtVerifier);
+
+// Build authorization URL
 $authData = $client->buildAuthorizationUrl(['openid', 'profile']);
 // Redirect to $authData['url']
+// Store $authData['state'], $authData['nonce'], $authData['code_verifier'] in session
 
-// Callback
+// Handle callback
 $tokens = $client->exchangeCode($code, $authData['code_verifier']);
 $claims = $client->decodeIdToken($tokens->idToken);
 $client->validateClaims($claims, $authData['nonce']);
+```
+
+Or use the factory (handles auto-discovery + caching):
+
+```php
+use Jostkleigrewe\Sso\Bundle\Factory\OidcClientFactory;
+
+$client = OidcClientFactory::create(
+    issuer: 'https://sso.example.com',
+    clientId: 'my-app',
+    redirectUri: 'https://app.com/callback',
+    httpClient: $httpClient,
+    requestFactory: $requestFactory,
+    streamFactory: $streamFactory,
+);
+```
+
+## Docker/Kubernetes (Dual-URL)
+
+```yaml
+eurip_sso:
+    # Internal URL for token exchange (server-to-server)
+    issuer: 'http://sso-container:8080'
+
+    # Public URL for browser redirects
+    public_issuer: 'https://sso.example.com'
 ```
 
 ## Troubleshooting

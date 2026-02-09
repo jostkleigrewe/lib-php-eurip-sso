@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Tests\Client;
 
+use Jostkleigrewe\Sso\Client\JwtVerifier;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Jostkleigrewe\Sso\Contracts\Exception\ClaimsValidationException;
 use Jostkleigrewe\Sso\Contracts\Exception\OidcProtocolException;
@@ -22,6 +23,7 @@ final class OidcClientTest extends TestCase
     private ClientInterface $httpClient;
     private RequestFactoryInterface $requestFactory;
     private StreamFactoryInterface $streamFactory;
+    private JwtVerifier $jwtVerifier;
 
     protected function setUp(): void
     {
@@ -51,6 +53,13 @@ final class OidcClientTest extends TestCase
         // Setup stream factory mock
         $stream = $this->createMock(StreamInterface::class);
         $this->streamFactory->method('createStream')->willReturn($stream);
+
+        // Setup JwtVerifier
+        $this->jwtVerifier = new JwtVerifier(
+            'https://sso.example.com/.well-known/jwks.json',
+            $this->httpClient,
+            $this->requestFactory,
+        );
     }
 
     private function createClient(): OidcClient
@@ -60,6 +69,7 @@ final class OidcClientTest extends TestCase
             $this->httpClient,
             $this->requestFactory,
             $this->streamFactory,
+            $this->jwtVerifier,
         );
     }
 
@@ -135,6 +145,7 @@ final class OidcClientTest extends TestCase
             $this->httpClient,
             $this->requestFactory,
             $this->streamFactory,
+            $this->jwtVerifier,
         );
 
         $this->expectException(OidcProtocolException::class);
@@ -309,6 +320,7 @@ final class OidcClientTest extends TestCase
             $this->httpClient,
             $this->requestFactory,
             $this->streamFactory,
+            $this->jwtVerifier,
         );
 
         // Should accept both internal and public issuer

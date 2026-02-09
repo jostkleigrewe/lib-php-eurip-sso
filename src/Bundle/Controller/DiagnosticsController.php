@@ -9,7 +9,9 @@ use Jostkleigrewe\Sso\Bundle\Service\EuripSsoClaimsService;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoTokenStorage;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * DE: Controller für Diagnose-Seiten (debug, test).
@@ -20,6 +22,7 @@ final class DiagnosticsController extends AbstractController
     public function __construct(
         private readonly OidcClient $oidcClient,
         /** @var list<string> */
+        #[Autowire('%eurip_sso.scopes%')]
         private readonly array $scopes = OidcConstants::DEFAULT_SCOPES,
         private readonly ?EuripSsoClaimsService $claimsService = null,
         private readonly ?EuripSsoTokenStorage $tokenStorage = null,
@@ -30,6 +33,7 @@ final class DiagnosticsController extends AbstractController
      * DE: Zeigt OIDC Debug-Informationen.
      * EN: Shows OIDC debug information.
      */
+    #[Route('%eurip_sso.routes.debug%', name: OidcConstants::ROUTE_DEBUG, methods: ['GET'])]
     public function debug(): Response
     {
         $config = $this->oidcClient->getConfig();
@@ -108,6 +112,7 @@ final class DiagnosticsController extends AbstractController
      * DE: Zeigt Auth-Workflow-Testseite.
      * EN: Shows auth workflow test page.
      */
+    #[Route('%eurip_sso.routes.test%', name: OidcConstants::ROUTE_TEST, methods: ['GET'])]
     public function test(): Response
     {
         $user = $this->getUser();

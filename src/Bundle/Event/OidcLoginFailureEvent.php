@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Event;
 
-use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -16,8 +15,6 @@ use Symfony\Contracts\EventDispatcher\Event;
  */
 final class OidcLoginFailureEvent extends Event
 {
-    public const NAME = OidcConstants::EVENT_LOGIN_FAILURE;
-
     private ?Response $response = null;
 
     public function __construct(

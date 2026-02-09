@@ -6,7 +6,6 @@ namespace Jostkleigrewe\Sso\Bundle\Service;
 
 use Jostkleigrewe\Sso\Bundle\DTO\SsoClaims;
 use Jostkleigrewe\Sso\Bundle\Exception\NotAuthenticatedException;
-use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Jostkleigrewe\Sso\Contracts\DTO\TokenResponse;
 use Jostkleigrewe\Sso\Contracts\DTO\UserInfoResponse;
@@ -70,7 +69,6 @@ final class EuripSsoApiClient
         // Dispatch event
         $this->eventDispatcher->dispatch(
             new \Jostkleigrewe\Sso\Bundle\Event\OidcTokenRefreshedEvent($tokenResponse),
-            OidcConstants::EVENT_TOKEN_REFRESHED
         );
 
         $this->logger?->info('Tokens refreshed successfully');
@@ -89,11 +87,12 @@ final class EuripSsoApiClient
     {
         $tokenResponse = $this->refreshTokens();
 
-        // ID-Token might be in the refresh response
+        // DE: ID-Token aus Refresh-Response validieren (Signatur + Claims)
+        // EN: Validate ID token from refresh response (signature + claims)
         if ($tokenResponse->idToken !== null) {
             $claims = $this->oidcClient->decodeIdToken(
                 idToken: $tokenResponse->idToken,
-                verifySignature: false,
+                verifySignature: true,
                 validateClaims: false,
             );
             return new SsoClaims($claims);

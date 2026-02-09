@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Event;
 
-use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Symfony\Contracts\EventDispatcher\Event;
 
 /**
@@ -19,8 +18,6 @@ use Symfony\Contracts\EventDispatcher\Event;
  */
 final class OidcBackchannelLogoutEvent extends Event
 {
-    public const NAME = OidcConstants::EVENT_BACKCHANNEL_LOGOUT;
-
     /**
      * DE: Markiert ob die Session erfolgreich invalidiert wurde.
      * EN: Marks whether the session was successfully invalidated.

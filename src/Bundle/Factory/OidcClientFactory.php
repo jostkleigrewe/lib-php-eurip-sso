@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Factory;
 
+use Jostkleigrewe\Sso\Client\JwtVerifier;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Jostkleigrewe\Sso\Contracts\DTO\DiscoveryDocument;
 use Jostkleigrewe\Sso\Contracts\Exception\OidcProtocolException;
@@ -54,15 +55,28 @@ final class OidcClientFactory
             logger: $logger,
         );
 
-        $client = new OidcClient($config, $httpClient, $requestFactory, $streamFactory, $logger);
+        // DE: JwtVerifier erzeugen (für JWT-Signatur-Validierung via JWKS)
+        // EN: Create JwtVerifier (for JWT signature validation via JWKS)
+        $jwtVerifier = new JwtVerifier($config->jwksUri, $httpClient, $requestFactory, $logger);
+
+        $client = new OidcClient($config, $httpClient, $requestFactory, $streamFactory, $jwtVerifier, $logger);
 
         // DE: JWKS vorab laden und cachen (für JWT-Signatur-Validierung)
         // EN: Preload and cache JWKS (for JWT signature validation)
         if ($cache !== null && $config->jwksUri !== '') {
-            self::preloadJwks($client, $config->jwksUri, $httpClient, $requestFactory, $cache, $logger);
+            self::preloadJwks($jwtVerifier, $config->jwksUri, $httpClient, $requestFactory, $cache, $logger);
         }
 
         return $client;
+    }
+
+    /**
+     * DE: Erzeugt den Cache-Key für JWKS (shared zwischen Factory + Warmup-Command).
+     * EN: Builds the cache key for JWKS (shared between factory + warmup command).
+     */
+    public static function buildJwksCacheKey(string $jwksUri): string
+    {
+        return sprintf('eurip_sso.jwks.%s.%s', self::CACHE_VERSION, hash('xxh3', $jwksUri));
     }
 
     /**
@@ -70,14 +84,14 @@ final class OidcClientFactory
      * EN: Loads JWKS from cache or IdP and passes them to the client.
      */
     private static function preloadJwks(
-        OidcClient $client,
+        JwtVerifier $jwtVerifier,
         string $jwksUri,
         ClientInterface $httpClient,
         RequestFactoryInterface $requestFactory,
         CacheInterface $cache,
         ?LoggerInterface $logger,
     ): void {
-        $cacheKey = sprintf('eurip_sso.jwks.%s.%s', self::CACHE_VERSION, hash('xxh3', $jwksUri));
+        $cacheKey = self::buildJwksCacheKey($jwksUri);
 
         try {
             /** @var array<string, mixed> $jwks */
@@ -106,7 +120,7 @@ final class OidcClientFactory
                 return $data;
             });
 
-            $client->preloadJwks($jwks);
+            $jwtVerifier->preloadJwks($jwks);
         } catch (\Throwable $e) {
             // DE: Bei Fehlern nicht abbrechen - JWKS werden on-demand geladen
             // EN: Don't fail on errors - JWKS will be loaded on-demand

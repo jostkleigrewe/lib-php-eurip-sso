@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Jostkleigrewe\Sso\Bundle\Controller;
 
 use Jostkleigrewe\Sso\Bundle\Event\OidcFrontchannelLogoutEvent;
+use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
@@ -39,6 +41,7 @@ final class FrontchannelLogoutController extends AbstractController
      *     GET with optional query params: iss, sid.
      *     Response must be displayable in iframe (no X-Frame-Options).
      */
+    #[Route('%eurip_sso.routes.frontchannel_logout%', name: OidcConstants::ROUTE_FRONTCHANNEL_LOGOUT, methods: ['GET'])]
     public function frontchannelLogout(Request $request): Response
     {
         // DE: Parameter aus Query-String extrahieren
@@ -82,7 +85,7 @@ final class FrontchannelLogoutController extends AbstractController
             sessionId: $sessionId,
         );
 
-        $this->eventDispatcher->dispatch($event, OidcFrontchannelLogoutEvent::NAME);
+        $this->eventDispatcher->dispatch($event);
 
         // DE: Lokale Session invalidieren
         // EN: Invalidate local session

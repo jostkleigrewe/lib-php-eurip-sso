@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Controller;
 
+use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoClaimsService;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoTokenStorage;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * DE: Controller für User-Profil-Seite.
@@ -18,6 +21,7 @@ use Symfony\Component\HttpFoundation\Response;
 final class ProfileController extends AbstractController
 {
     public function __construct(
+        #[Autowire('%eurip_sso.routes.login%')]
         private readonly string $loginPath = '/auth/login',
         private readonly ?EuripSsoClaimsService $claimsService = null,
         private readonly ?EuripSsoTokenStorage $tokenStorage = null,
@@ -28,6 +32,7 @@ final class ProfileController extends AbstractController
      * DE: Zeigt das User-Profil mit OIDC Claims.
      * EN: Shows user profile with OIDC claims.
      */
+    #[Route('%eurip_sso.routes.profile%', name: OidcConstants::ROUTE_PROFILE, methods: ['GET'])]
     public function profile(): Response
     {
         $user = $this->getUser();

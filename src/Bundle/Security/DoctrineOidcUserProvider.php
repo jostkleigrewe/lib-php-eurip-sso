@@ -75,7 +75,6 @@ final class DoctrineOidcUserProvider implements OidcUserProviderInterface, UserP
             // Dispatch user created event (before flush)
             $this->eventDispatcher->dispatch(
                 new OidcUserCreatedEvent($entity, $claims, $tokenResponse),
-                OidcUserCreatedEvent::NAME
             );
         } elseif ($this->syncOnLogin) {
             $this->syncClaims($entity, $claims);
@@ -87,7 +86,6 @@ final class DoctrineOidcUserProvider implements OidcUserProviderInterface, UserP
             // Dispatch user updated event (before flush)
             $this->eventDispatcher->dispatch(
                 new OidcUserUpdatedEvent($entity, $claims, $tokenResponse),
-                OidcUserUpdatedEvent::NAME
             );
         }
 
@@ -114,12 +112,18 @@ final class DoctrineOidcUserProvider implements OidcUserProviderInterface, UserP
         // Try to instantiate with constructor args, fall back to reflection
         $entity = $this->instantiateEntity($issuer, $subject);
 
-        // Set required OIDC identity (in case constructor didn't set them)
+        // DE: OIDC-Identität setzen (falls Constructor sie nicht gesetzt hat)
+        // EN: Set OIDC identity (in case constructor didn't set them)
         try {
             $this->propertyAccessor->setValue($entity, $this->mapping['issuer'], $issuer);
             $this->propertyAccessor->setValue($entity, $this->mapping['subject'], $subject);
-        } catch (\Throwable) {
-            // Properties might be read-only after constructor, that's OK
+        } catch (\Throwable $e) {
+            // DE: Readonly-Properties nach Constructor sind erwartbar, aber loggen für Debugging
+            // EN: Readonly properties after constructor are expected, but log for debugging
+            $this->logger?->debug('OIDC user provider: Could not set identity properties (likely readonly)', [
+                'entity_class' => $this->entityClass,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         // Set default roles
@@ -166,24 +170,13 @@ final class DoctrineOidcUserProvider implements OidcUserProviderInterface, UserP
     }
 
     /**
-     * Creates an OidcUser from entity (always returns OidcUser).
+     * DE: Wraps eine Entity immer in OidcUser (konsistente Rückgabe).
+     * EN: Always wraps an entity in OidcUser (consistent return type).
      *
      * @param array<string, mixed> $claims
      */
-    private function createOidcUser(object $entity, array $claims): OidcUser
+    private function wrapUser(object $entity, array $claims): OidcUser
     {
-        $roles = [];
-        if ($this->mapping['roles'] !== null) {
-            $roles = $this->propertyAccessor->getValue($entity, $this->mapping['roles']) ?? [];
-        }
-        if ($this->mapping['external_roles'] !== null) {
-            $externalRoles = $this->propertyAccessor->getValue($entity, $this->mapping['external_roles']) ?? [];
-            $roles = array_unique(array_merge($roles, $externalRoles));
-        }
-        if (empty($roles)) {
-            $roles = $this->defaultRoles;
-        }
-
         return new OidcUser(
             id: $this->getEntityId($entity),
             issuer: $this->propertyAccessor->getValue($entity, $this->mapping['issuer']),
@@ -191,64 +184,35 @@ final class DoctrineOidcUserProvider implements OidcUserProviderInterface, UserP
             email: $this->mapping['email'] !== null
                 ? $this->propertyAccessor->getValue($entity, $this->mapping['email'])
                 : ($claims['email'] ?? null),
-            roles: array_values($roles),
+            roles: $this->buildRoles($entity),
             claims: $claims,
         );
     }
 
     /**
-     * @param array<string, mixed> $claims
+     * DE: Baut die Rolle-Liste aus Entity-Properties (lokal + extern + Fallback).
+     * EN: Builds the role list from entity properties (local + external + fallback).
+     *
+     * @return list<string>
      */
-    private function wrapUser(object $entity, array $claims): UserInterface
+    private function buildRoles(object $entity): array
     {
-        // If entity already implements UserInterface, use it directly
-        if ($entity instanceof UserInterface) {
-            // Merge local + external roles if both are configured
-            if ($this->mapping['roles'] !== null && $this->mapping['external_roles'] !== null) {
-                $localRoles = $this->propertyAccessor->getValue($entity, $this->mapping['roles']) ?? [];
-                $externalRoles = $this->propertyAccessor->getValue($entity, $this->mapping['external_roles']) ?? [];
-                /** @var list<string> $mergedRoles */
-                $mergedRoles = array_values(array_unique(array_merge($localRoles, $externalRoles)));
-
-                // Return OidcUser wrapper with merged roles
-                return new OidcUser(
-                    id: $this->getEntityId($entity),
-                    issuer: $this->propertyAccessor->getValue($entity, $this->mapping['issuer']),
-                    subject: $this->propertyAccessor->getValue($entity, $this->mapping['subject']),
-                    email: $this->mapping['email'] !== null
-                        ? $this->propertyAccessor->getValue($entity, $this->mapping['email'])
-                        : ($claims['email'] ?? null),
-                    roles: $mergedRoles,
-                    claims: $claims,
-                );
-            }
-
-            return $entity;
-        }
-
-        // Wrap non-UserInterface entity in OidcUser
         $roles = [];
+
         if ($this->mapping['roles'] !== null) {
             $roles = $this->propertyAccessor->getValue($entity, $this->mapping['roles']) ?? [];
         }
+
         if ($this->mapping['external_roles'] !== null) {
             $externalRoles = $this->propertyAccessor->getValue($entity, $this->mapping['external_roles']) ?? [];
             $roles = array_unique(array_merge($roles, $externalRoles));
         }
+
         if (empty($roles)) {
             $roles = $this->defaultRoles;
         }
 
-        return new OidcUser(
-            id: $this->getEntityId($entity),
-            issuer: $this->propertyAccessor->getValue($entity, $this->mapping['issuer']),
-            subject: $this->propertyAccessor->getValue($entity, $this->mapping['subject']),
-            email: $this->mapping['email'] !== null
-                ? $this->propertyAccessor->getValue($entity, $this->mapping['email'])
-                : ($claims['email'] ?? null),
-            roles: $roles,
-            claims: $claims,
-        );
+        return array_values($roles);
     }
 
     /**
@@ -293,16 +257,43 @@ final class DoctrineOidcUserProvider implements OidcUserProviderInterface, UserP
 
     private function getEntityId(object $entity): int|string
     {
-        // Try common ID getters
+        // DE: Bevorzugt getId() — Standard bei Doctrine Entities
+        // EN: Prefer getId() — standard for Doctrine entities
         if (method_exists($entity, 'getId')) {
             return $entity->getId();
         }
 
-        // Use Doctrine metadata
+        // DE: Fallback über Doctrine Metadata
+        // EN: Fallback via Doctrine metadata
         $metadata = $this->entityManager->getClassMetadata($this->entityClass);
         $identifier = $metadata->getIdentifierValues($entity);
 
-        return reset($identifier) ?: 0;
+        if (count($identifier) === 0) {
+            $this->logger?->warning('OIDC user provider: Entity has no identifier value', [
+                'entity_class' => $this->entityClass,
+            ]);
+
+            return 0;
+        }
+
+        if (count($identifier) > 1) {
+            $this->logger?->warning('OIDC user provider: Entity uses composite key, using first value', [
+                'entity_class' => $this->entityClass,
+                'identifier_fields' => array_keys($identifier),
+            ]);
+        }
+
+        $firstValue = reset($identifier);
+
+        if ($firstValue === null || $firstValue === false || $firstValue === '') {
+            $this->logger?->warning('OIDC user provider: Entity identifier is empty', [
+                'entity_class' => $this->entityClass,
+            ]);
+
+            return 0;
+        }
+
+        return $firstValue;
     }
 
     /**
@@ -350,8 +341,7 @@ final class DoctrineOidcUserProvider implements OidcUserProviderInterface, UserP
             'sub' => $subject,
         ];
 
-        // Always return OidcUser for UserProviderInterface
-        return $this->createOidcUser($entity, $claims);
+        return $this->wrapUser($entity, $claims);
     }
 
     /**

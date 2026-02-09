@@ -48,7 +48,7 @@ final class OidcAuthenticationService
     {
         // Dispatch pre-login event
         $preLoginEvent = new OidcPreLoginEvent($request, $scopes);
-        $this->eventDispatcher->dispatch($preLoginEvent, OidcConstants::EVENT_PRE_LOGIN);
+        $this->eventDispatcher->dispatch($preLoginEvent);
 
         if ($preLoginEvent->hasResponse()) {
             return null; // Event handler wants to handle response
@@ -125,7 +125,7 @@ final class OidcAuthenticationService
 
         // Dispatch success event
         $successEvent = new OidcLoginSuccessEvent($user, $tokenResponse, $claims);
-        $this->eventDispatcher->dispatch($successEvent, OidcConstants::EVENT_LOGIN_SUCCESS);
+        $this->eventDispatcher->dispatch($successEvent);
 
         // Clear auth state after successful login (prevents replay)
         $this->sessionStorage->markSuccessAndClear();
@@ -155,7 +155,7 @@ final class OidcAuthenticationService
     ): ?string {
         // Dispatch pre-logout event
         $preLogoutEvent = new OidcPreLogoutEvent($request, $user, $idToken);
-        $this->eventDispatcher->dispatch($preLogoutEvent, OidcConstants::EVENT_PRE_LOGOUT);
+        $this->eventDispatcher->dispatch($preLogoutEvent);
 
         if ($preLogoutEvent->hasResponse() || $preLogoutEvent->shouldSkipSsoLogout()) {
             return null;
@@ -187,7 +187,7 @@ final class OidcAuthenticationService
         ]);
 
         $event = new OidcLoginFailureEvent($error, $description, $exception);
-        $this->eventDispatcher->dispatch($event, OidcConstants::EVENT_LOGIN_FAILURE);
+        $this->eventDispatcher->dispatch($event);
 
         return $event;
     }
@@ -210,7 +210,7 @@ final class OidcAuthenticationService
     public function getPreLoginEvent(Request $request, array $scopes): OidcPreLoginEvent
     {
         $event = new OidcPreLoginEvent($request, $scopes);
-        $this->eventDispatcher->dispatch($event, OidcConstants::EVENT_PRE_LOGIN);
+        $this->eventDispatcher->dispatch($event);
         return $event;
     }
 }

@@ -8,49 +8,41 @@ namespace Jostkleigrewe\Sso\Bundle;
  * DE: Konstanten für das OIDC SSO Bundle.
  * EN: Constants for the OIDC SSO bundle.
  */
-interface OidcConstants
+final class OidcConstants
 {
-    // Session Keys
-    public const SESSION_STATE = '_eurip_sso_state';
-    public const SESSION_NONCE = '_eurip_sso_nonce';
-    public const SESSION_VERIFIER = '_eurip_sso_verifier';
-    public const SESSION_ID_TOKEN = '_eurip_sso_id_token';
-    public const SESSION_RETURN_URL = '_eurip_sso_return_url';
-    public const SESSION_ACCESS_TOKEN = '_eurip_sso_access_token';
-    public const SESSION_REFRESH_TOKEN = '_eurip_sso_refresh_token';
-    public const SESSION_TOKEN_EXPIRES = '_eurip_sso_token_expires';
+    private function __construct()
+    {
+    }
 
-    // Event Names
-    public const EVENT_PRE_LOGIN = 'eurip_sso.login.pre';
-    public const EVENT_LOGIN_SUCCESS = 'eurip_sso.login.success';
-    public const EVENT_LOGIN_FAILURE = 'eurip_sso.login.failure';
-    public const EVENT_PRE_LOGOUT = 'eurip_sso.logout.pre';
-    public const EVENT_BACKCHANNEL_LOGOUT = 'eurip_sso.logout.backchannel';
-    public const EVENT_FRONTCHANNEL_LOGOUT = 'eurip_sso.logout.frontchannel';
-    public const EVENT_USER_CREATED = 'eurip_sso.user.created';
-    public const EVENT_USER_UPDATED = 'eurip_sso.user.updated';
-    public const EVENT_TOKEN_REFRESHED = 'eurip_sso.token.refreshed';
+    // Session Keys
+    public const string SESSION_STATE = '_eurip_sso_state';
+    public const string SESSION_NONCE = '_eurip_sso_nonce';
+    public const string SESSION_VERIFIER = '_eurip_sso_verifier';
+    public const string SESSION_ID_TOKEN = '_eurip_sso_id_token';
+    public const string SESSION_RETURN_URL = '_eurip_sso_return_url';
+    public const string SESSION_ACCESS_TOKEN = '_eurip_sso_access_token';
+    public const string SESSION_REFRESH_TOKEN = '_eurip_sso_refresh_token';
+    public const string SESSION_TOKEN_EXPIRES = '_eurip_sso_token_expires';
 
     // Route Names
-    public const ROUTE_LOGIN = 'eurip_sso_login';
-    public const ROUTE_CALLBACK = 'eurip_sso_callback';
-    public const ROUTE_LOGOUT = 'eurip_sso_logout';
-    public const ROUTE_LOGOUT_CONFIRM = 'eurip_sso_logout_confirm';
-    public const ROUTE_BACKCHANNEL_LOGOUT = 'eurip_sso_backchannel_logout';
-    public const ROUTE_FRONTCHANNEL_LOGOUT = 'eurip_sso_frontchannel_logout';
-    public const ROUTE_PROFILE = 'eurip_sso_profile';
-    public const ROUTE_DEBUG = 'eurip_sso_debug';
-    public const ROUTE_TEST = 'eurip_sso_test';
+    public const string ROUTE_LOGIN = 'eurip_sso_login';
+    public const string ROUTE_CALLBACK = 'eurip_sso_callback';
+    public const string ROUTE_LOGOUT = 'eurip_sso_logout';
+    public const string ROUTE_LOGOUT_CONFIRM = 'eurip_sso_logout_confirm';
+    public const string ROUTE_BACKCHANNEL_LOGOUT = 'eurip_sso_backchannel_logout';
+    public const string ROUTE_FRONTCHANNEL_LOGOUT = 'eurip_sso_frontchannel_logout';
+    public const string ROUTE_PROFILE = 'eurip_sso_profile';
+    public const string ROUTE_DEBUG = 'eurip_sso_debug';
+    public const string ROUTE_TEST = 'eurip_sso_test';
 
-    // Default Scopes
-    public const DEFAULT_SCOPES = ['openid', 'profile', 'email'];
+    /** @var list<string> */
+    public const array DEFAULT_SCOPES = ['openid', 'profile', 'email'];
 
-    // Default Firewall
-    public const DEFAULT_FIREWALL = 'main';
+    public const string DEFAULT_FIREWALL = 'main';
 
     // CSRF Token Intentions
-    public const CSRF_LOGOUT_INTENTION = 'eurip_sso_logout';
+    public const string CSRF_LOGOUT_INTENTION = 'eurip_sso_logout';
 
     // Translation Domain
-    public const TRANSLATION_DOMAIN = 'eurip_sso';
+    public const string TRANSLATION_DOMAIN = 'eurip_sso';
 }

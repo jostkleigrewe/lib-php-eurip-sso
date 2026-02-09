@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Twig;
 
+use Jostkleigrewe\Sso\Bundle\Service\EuripSsoAuthorizationService;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoClaimsService;
-use Jostkleigrewe\Sso\Bundle\Service\EuripSsoFacade;
 use Twig\Extension\AbstractExtension;
 use Twig\TwigFunction;
 
@@ -28,8 +28,8 @@ use Twig\TwigFunction;
 final class EuripSsoTwigExtension extends AbstractExtension
 {
     public function __construct(
-        private readonly EuripSsoFacade $facade,
         private readonly EuripSsoClaimsService $claimsService,
+        private readonly EuripSsoAuthorizationService $authorizationService,
     ) {
     }
 
@@ -56,7 +56,7 @@ final class EuripSsoTwigExtension extends AbstractExtension
      */
     public function isAuthenticated(): bool
     {
-        return $this->facade->isAuthenticated();
+        return $this->claimsService->isAuthenticated();
     }
 
     /**
@@ -65,7 +65,7 @@ final class EuripSsoTwigExtension extends AbstractExtension
      */
     public function getEmail(): ?string
     {
-        return $this->facade->getEmail();
+        return $this->claimsService->getEmail();
     }
 
     /**
@@ -83,7 +83,7 @@ final class EuripSsoTwigExtension extends AbstractExtension
      */
     public function getUserId(): ?string
     {
-        return $this->facade->getUserId();
+        return $this->claimsService->getUserId();
     }
 
     /**
@@ -92,7 +92,8 @@ final class EuripSsoTwigExtension extends AbstractExtension
      */
     public function hasRole(string $role): bool
     {
-        return $this->facade->hasRole($role);
+        return $this->authorizationService->hasRole($role)
+            || $this->authorizationService->hasClientRole($role);
     }
 
     /**
@@ -101,7 +102,7 @@ final class EuripSsoTwigExtension extends AbstractExtension
      */
     public function hasPermission(string $permission): bool
     {
-        return $this->facade->hasPermission($permission);
+        return $this->authorizationService->hasPermission($permission);
     }
 
     /**
@@ -110,7 +111,7 @@ final class EuripSsoTwigExtension extends AbstractExtension
      */
     public function hasGroup(string $group): bool
     {
-        return $this->facade->isInGroup($group);
+        return $this->authorizationService->isInGroup($group);
     }
 
     /**
