@@ -33,6 +33,7 @@ final class OidcAuthenticationService
         private readonly OidcUserProviderInterface $userProvider,
         private readonly OidcSessionStorage $sessionStorage,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly ?OidcCacheService $cacheService = null,
         private readonly ?LoggerInterface $logger = null,
     ) {
     }
@@ -109,7 +110,21 @@ final class OidcAuthenticationService
         //     to prevent race conditions (no retry with parallel requests)
 
         // Exchange code for tokens
-        $tokenResponse = $this->oidcClient->exchangeCode($code, $storedData['verifier']);
+        try {
+            $tokenResponse = $this->oidcClient->exchangeCode($code, $storedData['verifier']);
+        } catch (TokenExchangeFailedException $e) {
+            // DE: Bei invalid_client den Cache clearen, damit der nächste Login funktioniert.
+            //     Ein automatischer Retry ist nicht möglich, da der State bereits verbraucht wurde.
+            // EN: On invalid_client clear cache so next login works.
+            //     Automatic retry not possible since state was already consumed.
+            if ($e->error === 'invalid_client' && $this->cacheService !== null) {
+                $this->logger?->warning('OIDC token exchange failed with invalid_client, clearing cache', [
+                    'error_description' => $e->description,
+                ]);
+                $this->cacheService->clearAll();
+            }
+            throw $e;
+        }
 
         // Decode and validate ID token
         $claims = [];

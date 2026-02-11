@@ -25,7 +25,12 @@ final class OidcClientFactory
 {
     private const CACHE_TTL = 3600; // 1 hour
     private const JWKS_CACHE_TTL = 600; // DE: 10 Minuten für schnellere Key-Rotation // EN: 10 minutes for faster key rotation
-    private const CACHE_VERSION = 'v1'; // DE: Bei Breaking Changes hochzählen // EN: Increment on breaking changes
+
+    /**
+     * DE: Cache-Version für Invalidierung bei Breaking Changes.
+     * EN: Cache version for invalidation on breaking changes.
+     */
+    public const CACHE_VERSION = 'v1';
 
     /**
      * @throws OidcProtocolException

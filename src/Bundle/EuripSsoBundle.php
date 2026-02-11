@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle;
 
+use Jostkleigrewe\Sso\Bundle\Command\OidcCacheClearCommand;
 use Jostkleigrewe\Sso\Bundle\Controller\BackchannelLogoutController;
 use Jostkleigrewe\Sso\Bundle\Controller\FrontchannelLogoutController;
 use Jostkleigrewe\Sso\Bundle\Factory\OidcClientFactory;
 use Jostkleigrewe\Sso\Bundle\Security\DoctrineOidcUserProvider;
 use Jostkleigrewe\Sso\Bundle\Security\OidcAuthenticator;
 use Jostkleigrewe\Sso\Bundle\Security\OidcUserProviderInterface;
+use Jostkleigrewe\Sso\Bundle\Service\OidcCacheService;
 use Jostkleigrewe\Sso\Client\JwtVerifier;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Psr\Http\Client\ClientInterface;
@@ -205,6 +207,10 @@ final class EuripSsoBundle extends AbstractBundle
         // EN: Register OidcClient + JwtVerifier via static factory
         $this->registerOidcClient($config, $container, $builder);
 
+        // DE: OidcCacheService mit konfiguriertem Cache-Pool registrieren
+        // EN: Register OidcCacheService with configured cache pool
+        $this->registerCacheService($config, $container, $builder);
+
         // DE: OidcAuthenticator bedingt registrieren
         // EN: Conditionally register OidcAuthenticator
         if ($config['authenticator']['enabled']) {
@@ -299,5 +305,34 @@ final class EuripSsoBundle extends AbstractBundle
             ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE));
 
         $services->alias(OidcUserProviderInterface::class, DoctrineOidcUserProvider::class);
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function registerCacheService(
+        array $config,
+        ContainerConfigurator $container,
+        ContainerBuilder $builder,
+    ): void {
+        $cacheRef = $config['cache']['enabled']
+            ? new Reference($config['cache']['pool'])
+            : null;
+
+        $container->services()
+            ->set(OidcCacheService::class)
+            ->autowire()
+            ->autoconfigure()
+            ->public()
+            ->arg('$cache', $cacheRef)
+            ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE));
+
+        // DE: OidcCacheClearCommand explizit registrieren (hängt von OidcCacheService ab)
+        // EN: Explicitly register OidcCacheClearCommand (depends on OidcCacheService)
+        $container->services()
+            ->set(OidcCacheClearCommand::class)
+            ->autowire()
+            ->autoconfigure()
+            ->tag('console.command');
     }
 }
