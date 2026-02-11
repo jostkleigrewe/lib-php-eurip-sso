@@ -34,9 +34,15 @@ final class OidcAuthenticationException extends AuthenticationException
 
     public static function fromTokenExchange(TokenExchangeFailedException $e): self
     {
+        // DE: Fehlerdetails inkl. error_description für besseres Debugging
+        // EN: Error details incl. error_description for better debugging
+        $message = $e->errorDescription !== ''
+            ? sprintf('Token exchange failed: %s - %s', $e->error, $e->errorDescription)
+            : sprintf('Token exchange failed: %s', $e->error);
+
         return new self(
             errorCode: OidcErrorCode::fromString($e->error),
-            message: sprintf('Token exchange failed: %s', $e->error),
+            message: $message,
             originalException: $e,
         );
     }
