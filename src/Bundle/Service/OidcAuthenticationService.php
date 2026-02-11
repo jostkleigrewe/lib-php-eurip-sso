@@ -119,7 +119,7 @@ final class OidcAuthenticationService
             //     Automatic retry not possible since state was already consumed.
             if ($e->error === 'invalid_client' && $this->cacheService !== null) {
                 $this->logger?->warning('OIDC token exchange failed with invalid_client, clearing cache', [
-                    'error_description' => $e->description,
+                    'error_description' => $e->errorDescription,
                 ]);
                 $this->cacheService->clearAll();
             }
