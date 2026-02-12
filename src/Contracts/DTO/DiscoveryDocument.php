@@ -75,6 +75,14 @@ final readonly class DiscoveryDocument
         public ?string $introspectionEndpoint = null,
 
         /**
+         * DE: Device Authorization Endpoint (RFC 8628, OPTIONAL).
+         * EN: Device authorization endpoint (RFC 8628, OPTIONAL).
+         *
+         * @see https://datatracker.ietf.org/doc/html/rfc8628
+         */
+        public ?string $deviceAuthorizationEndpoint = null,
+
+        /**
          * DE: Unterstützte Response Types (REQUIRED).
          * EN: Supported response types (REQUIRED).
          *
@@ -174,6 +182,7 @@ final readonly class DiscoveryDocument
             endSessionEndpoint: self::getStringOrNull($data, 'end_session_endpoint'),
             revocationEndpoint: self::getStringOrNull($data, 'revocation_endpoint'),
             introspectionEndpoint: self::getStringOrNull($data, 'introspection_endpoint'),
+            deviceAuthorizationEndpoint: self::getStringOrNull($data, 'device_authorization_endpoint'),
             responseTypesSupported: self::getStringArray($data, 'response_types_supported'),
             grantTypesSupported: self::getStringArray($data, 'grant_types_supported'),
             scopesSupported: self::getStringArray($data, 'scopes_supported'),
@@ -228,6 +237,33 @@ final readonly class DiscoveryDocument
     public function supportsSessionManagement(): bool
     {
         return $this->checkSessionIframe !== null;
+    }
+
+    /**
+     * DE: Prüft ob Device Authorization Grant (RFC 8628) unterstützt wird.
+     * EN: Checks if device authorization grant (RFC 8628) is supported.
+     */
+    public function supportsDeviceCodeFlow(): bool
+    {
+        return $this->deviceAuthorizationEndpoint !== null;
+    }
+
+    /**
+     * DE: Prüft ob Client Credentials Grant (RFC 6749 §4.4) unterstützt wird.
+     * EN: Checks if client credentials grant (RFC 6749 §4.4) is supported.
+     */
+    public function supportsClientCredentials(): bool
+    {
+        return $this->supportsGrantType('client_credentials');
+    }
+
+    /**
+     * DE: Prüft ob Token Introspection (RFC 7662) unterstützt wird.
+     * EN: Checks if token introspection (RFC 7662) is supported.
+     */
+    public function supportsIntrospection(): bool
+    {
+        return $this->introspectionEndpoint !== null;
     }
 
     /**

@@ -8,6 +8,7 @@ OIDC Client Library and Symfony Bundle for Single Sign-On.
 
 - **Zero-Code Integration** - Complete OIDC auth via configuration only
 - OIDC Authorization Code Flow with PKCE (S256)
+- **Device Authorization Grant (RFC 8628)** - For CLI, Smart TV, IoT
 - Auto-Discovery via `.well-known/openid-configuration`
 - Dual-URL Support for Docker/Kubernetes environments
 - Automatic User Provisioning with Doctrine
@@ -81,6 +82,8 @@ security:
 | [Configuration](docs/CONFIGURATION.md) | Full configuration reference |
 | [Services](docs/SERVICES.md) | Authorization & claims services |
 | [Events](docs/EVENTS.md) | Customize authentication flow |
+| [Device Code Flow](docs/DEVICE-CODE-FLOW.md) | RFC 8628 for CLI, Smart TV, IoT |
+| [M2M Authentication](docs/M2M-AUTHENTICATION.md) | Client Credentials & Token Introspection |
 | [Standalone](docs/STANDALONE.md) | Use without Symfony Bundle |
 | [Security](docs/SECURITY.md) | HTTPS, JWT verification, PKCE |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Common issues and solutions |
@@ -89,8 +92,63 @@ security:
 ## Console Commands
 
 ```bash
-bin/console eurip:sso:cache-warmup      # Pre-fetch OIDC config + JWKS
-bin/console eurip:sso:test-connection   # Test OIDC provider connection
+bin/console eurip:sso:cache-warmup        # Pre-fetch OIDC config + JWKS
+bin/console eurip:sso:test-connection     # Test OIDC provider connection
+bin/console eurip:sso:device-login        # CLI login via Device Code Flow
+bin/console eurip:sso:client-credentials  # Get M2M token (Client Credentials)
+bin/console eurip:sso:introspect <token>  # Validate and inspect a token
+```
+
+## Device Code Flow (RFC 8628)
+
+For CLI tools, Smart TVs, or IoT devices without a browser:
+
+### CLI Usage
+
+```bash
+# Interactive login
+bin/console eurip:sso:device-login
+
+# With custom scopes
+bin/console eurip:sso:device-login --scopes="openid,profile,roles"
+
+# Output access token for piping
+ACCESS_TOKEN=$(bin/console eurip:sso:device-login --output-token)
+
+# Full JSON response
+bin/console eurip:sso:device-login --output-json
+```
+
+### Programmatic Usage
+
+```php
+use Jostkleigrewe\Sso\Client\OidcClient;
+
+// 1. Request device code
+$deviceCode = $oidcClient->requestDeviceCode(['openid', 'profile']);
+
+// 2. Show instructions to user
+echo "Open: {$deviceCode->verificationUri}\n";
+echo "Enter code: {$deviceCode->getFormattedUserCode()}\n";
+
+// 3. Poll for token (blocking)
+$tokenResponse = $oidcClient->awaitDeviceToken($deviceCode);
+
+// Or poll manually
+while (true) {
+    $result = $oidcClient->pollDeviceToken($deviceCode->deviceCode);
+
+    if ($result->isSuccess()) {
+        $tokenResponse = $result->tokenResponse;
+        break;
+    }
+
+    if ($result->isError()) {
+        throw new \Exception($result->errorDescription);
+    }
+
+    sleep($result->getRecommendedInterval($deviceCode->interval));
+}
 ```
 
 ## Docker/Kubernetes

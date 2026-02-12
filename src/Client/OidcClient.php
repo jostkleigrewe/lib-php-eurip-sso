@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Client;
 
+use Jostkleigrewe\Sso\Contracts\DTO\DeviceCodePollResult;
+use Jostkleigrewe\Sso\Contracts\DTO\DeviceCodeResponse;
+use Jostkleigrewe\Sso\Contracts\DTO\IntrospectionResponse;
 use Jostkleigrewe\Sso\Contracts\DTO\TokenResponse;
 use Jostkleigrewe\Sso\Contracts\DTO\UserInfoResponse;
 use Jostkleigrewe\Sso\Contracts\Exception\ClaimsValidationException;
@@ -384,6 +387,344 @@ final class OidcClient
             }
         }
     }
+
+    // =========================================================================
+    // Device Authorization Grant (RFC 8628)
+    // =========================================================================
+
+    /**
+     * DE: Fordert einen Device Code für den Device Authorization Grant an (RFC 8628).
+     *     Für Geräte ohne Browser (Smart TV, CLI, IoT).
+     * EN: Requests a device code for the device authorization grant (RFC 8628).
+     *     For devices without a browser (Smart TV, CLI, IoT).
+     *
+     * @param list<string> $scopes Die angeforderten Scopes
+     * @throws OidcProtocolException wenn kein device_authorization_endpoint konfiguriert ist
+     * @throws TokenExchangeFailedException bei Fehlern vom Provider
+     *
+     * @see https://datatracker.ietf.org/doc/html/rfc8628#section-3.1
+     */
+    public function requestDeviceCode(array $scopes = ['openid', 'profile', 'email']): DeviceCodeResponse
+    {
+        if ($this->config->deviceAuthorizationEndpoint === null) {
+            throw new OidcProtocolException('No device_authorization_endpoint configured');
+        }
+
+        $this->logger->debug('Requesting device code', ['scopes' => $scopes]);
+
+        $params = [
+            'client_id' => $this->config->clientId,
+            'scope' => implode(' ', $scopes),
+        ];
+
+        if ($this->config->clientSecret !== null) {
+            $params['client_secret'] = $this->config->clientSecret;
+        }
+
+        $response = $this->postForm($this->config->deviceAuthorizationEndpoint, $params);
+
+        if (!isset($response['device_code'], $response['user_code'], $response['verification_uri'])) {
+            $error = $response['error'] ?? 'unknown_error';
+            $description = $response['error_description'] ?? 'Device authorization request failed';
+
+            $this->logger->error('Device code request failed', [
+                'error' => $error,
+                'error_description' => $description,
+            ]);
+
+            throw new TokenExchangeFailedException($error, $description);
+        }
+
+        $this->logger->info('Device code obtained', [
+            'user_code' => $response['user_code'],
+            'verification_uri' => $response['verification_uri'],
+            'expires_in' => $response['expires_in'] ?? 600,
+        ]);
+
+        return DeviceCodeResponse::fromArray($response);
+    }
+
+    /**
+     * DE: Pollt den Token-Endpoint für Device Code Flow (RFC 8628).
+     *     Gibt das Ergebnis des Polling-Versuchs zurück.
+     * EN: Polls the token endpoint for device code flow (RFC 8628).
+     *     Returns the result of the polling attempt.
+     *
+     * @param string $deviceCode Der Device Code aus requestDeviceCode()
+     * @param int $currentInterval Das aktuelle Polling-Intervall in Sekunden
+     * @return DeviceCodePollResult Das Ergebnis (success, pending, slow_down, error)
+     *
+     * @see https://datatracker.ietf.org/doc/html/rfc8628#section-3.4
+     * @see https://datatracker.ietf.org/doc/html/rfc8628#section-3.5
+     */
+    public function pollDeviceToken(string $deviceCode, int $currentInterval = 5): DeviceCodePollResult
+    {
+        $this->logger->debug('Polling for device token');
+
+        $params = [
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+            'device_code' => $deviceCode,
+            'client_id' => $this->config->clientId,
+        ];
+
+        if ($this->config->clientSecret !== null) {
+            $params['client_secret'] = $this->config->clientSecret;
+        }
+
+        $response = $this->postForm($this->config->tokenEndpoint, $params);
+
+        // DE: Erfolg - Token erhalten // EN: Success - token received
+        if (isset($response['access_token'])) {
+            $this->logger->info('Device token obtained successfully');
+            return DeviceCodePollResult::success(TokenResponse::fromArray($response));
+        }
+
+        // DE: Fehler auswerten // EN: Evaluate error
+        $error = $response['error'] ?? 'unknown_error';
+        $description = $response['error_description'] ?? null;
+
+        return match ($error) {
+            // DE: Noch ausstehend - weiter polling // EN: Still pending - continue polling
+            'authorization_pending' => $this->handleAuthorizationPending(),
+
+            // DE: Zu schnell - Intervall erhöhen // EN: Too fast - increase interval
+            'slow_down' => $this->handleSlowDown($currentInterval),
+
+            // DE: User hat abgelehnt // EN: User denied
+            'access_denied' => $this->handleAccessDenied($description),
+
+            // DE: Code abgelaufen // EN: Code expired
+            'expired_token' => $this->handleExpiredToken($description),
+
+            // DE: Unbekannter Fehler als expired behandeln // EN: Treat unknown error as expired
+            default => $this->handleUnknownError($error, $description),
+        };
+    }
+
+    /**
+     * DE: Führt Device Code Flow komplett durch (Polling-Loop).
+     *     Blockiert bis Token erhalten oder Fehler/Timeout.
+     * EN: Executes complete device code flow (polling loop).
+     *     Blocks until token received or error/timeout.
+     *
+     * @param DeviceCodeResponse $deviceCode Der Device Code aus requestDeviceCode()
+     * @param callable|null $onPoll Callback bei jedem Poll (für Progress-Anzeige)
+     *                              Signatur: fn(int $attempt, int $interval): void
+     * @return TokenResponse Die erhaltenen Tokens
+     * @throws TokenExchangeFailedException bei Fehler oder Timeout
+     */
+    public function awaitDeviceToken(
+        DeviceCodeResponse $deviceCode,
+        ?callable $onPoll = null,
+    ): TokenResponse {
+        $interval = $deviceCode->interval;
+        $attempt = 0;
+        $maxAttempts = (int) ceil($deviceCode->expiresIn / $interval) + 5; // DE: Sicherheitspuffer // EN: Safety buffer
+
+        while ($attempt < $maxAttempts) {
+            $attempt++;
+
+            if ($onPoll !== null) {
+                $onPoll($attempt, $interval);
+            }
+
+            // DE: Warten vor Poll (außer beim ersten Versuch)
+            // EN: Wait before poll (except on first attempt)
+            if ($attempt > 1) {
+                sleep($interval);
+            }
+
+            $result = $this->pollDeviceToken($deviceCode->deviceCode, $interval);
+
+            if ($result->isSuccess() && $result->tokenResponse !== null) {
+                return $result->tokenResponse;
+            }
+
+            if ($result->isError()) {
+                throw new TokenExchangeFailedException(
+                    $result->status,
+                    $result->errorDescription ?? 'Device authorization failed',
+                );
+            }
+
+            // DE: Intervall anpassen wenn nötig // EN: Adjust interval if needed
+            $interval = $result->getRecommendedInterval($interval);
+        }
+
+        throw new TokenExchangeFailedException('timeout', 'Device code polling timed out');
+    }
+
+    private function handleAuthorizationPending(): DeviceCodePollResult
+    {
+        $this->logger->debug('Authorization pending, continue polling');
+        return DeviceCodePollResult::pending();
+    }
+
+    private function handleSlowDown(int $currentInterval): DeviceCodePollResult
+    {
+        $this->logger->debug('Slow down requested, increasing interval', [
+            'current_interval' => $currentInterval,
+            'new_interval' => $currentInterval + 5,
+        ]);
+        return DeviceCodePollResult::slowDown($currentInterval);
+    }
+
+    private function handleAccessDenied(?string $description): DeviceCodePollResult
+    {
+        $this->logger->warning('Device authorization denied by user');
+        return DeviceCodePollResult::accessDenied($description);
+    }
+
+    private function handleExpiredToken(?string $description): DeviceCodePollResult
+    {
+        $this->logger->warning('Device code expired');
+        return DeviceCodePollResult::expired($description);
+    }
+
+    private function handleUnknownError(string $error, ?string $description): DeviceCodePollResult
+    {
+        $this->logger->error('Unknown device token error', [
+            'error' => $error,
+            'error_description' => $description,
+        ]);
+        return DeviceCodePollResult::expired($description ?? sprintf('Unknown error: %s', $error));
+    }
+
+    // =========================================================================
+    // Client Credentials Grant (RFC 6749 Section 4.4)
+    // =========================================================================
+
+    /**
+     * DE: Holt Access Token via Client Credentials Grant (RFC 6749 §4.4).
+     *     Für Machine-to-Machine (M2M) Kommunikation ohne User-Interaktion.
+     *     Typische Anwendungsfälle: Cronjobs, Microservices, Backend-Integrationen.
+     *
+     * EN: Gets access token via client credentials grant (RFC 6749 §4.4).
+     *     For machine-to-machine (M2M) communication without user interaction.
+     *     Typical use cases: cronjobs, microservices, backend integrations.
+     *
+     * @param list<string> $scopes Die angeforderten Scopes (optional)
+     * @return TokenResponse Access Token (kein id_token, normalerweise kein refresh_token)
+     * @throws OidcProtocolException wenn kein client_secret konfiguriert ist
+     * @throws TokenExchangeFailedException bei Fehlern vom Provider
+     *
+     * @see https://datatracker.ietf.org/doc/html/rfc6749#section-4.4
+     */
+    public function getClientCredentialsToken(array $scopes = []): TokenResponse
+    {
+        // DE: Client Credentials erfordert ein Client Secret (confidential client)
+        // EN: Client credentials requires a client secret (confidential client)
+        if ($this->config->clientSecret === null) {
+            throw new OidcProtocolException(
+                'Client credentials grant requires a client_secret (confidential client)'
+            );
+        }
+
+        $this->logger->debug('Requesting client credentials token', ['scopes' => $scopes]);
+
+        $params = [
+            'grant_type' => 'client_credentials',
+            'client_id' => $this->config->clientId,
+            'client_secret' => $this->config->clientSecret,
+        ];
+
+        if ($scopes !== []) {
+            $params['scope'] = implode(' ', $scopes);
+        }
+
+        $response = $this->postForm($this->config->tokenEndpoint, $params);
+
+        if (!isset($response['access_token'])) {
+            $error = $response['error'] ?? 'unknown_error';
+            $description = $response['error_description'] ?? 'Client credentials token request failed';
+
+            $this->logger->error('Client credentials token request failed', [
+                'error' => $error,
+                'error_description' => $description,
+            ]);
+
+            throw new TokenExchangeFailedException($error, $description);
+        }
+
+        $this->logger->info('Client credentials token obtained', [
+            'expires_in' => $response['expires_in'] ?? 'unknown',
+            'scope' => $response['scope'] ?? 'none',
+        ]);
+
+        return TokenResponse::fromArray($response);
+    }
+
+    // =========================================================================
+    // Token Introspection (RFC 7662)
+    // =========================================================================
+
+    /**
+     * DE: Validiert ein Token via Introspection Endpoint (RFC 7662).
+     *     Für Resource Server (APIs), die eingehende Bearer Tokens prüfen müssen.
+     *     Der SSO-Server prüft das Token und gibt Metadaten zurück.
+     *
+     * EN: Validates a token via introspection endpoint (RFC 7662).
+     *     For resource servers (APIs) that need to validate incoming bearer tokens.
+     *     The SSO server validates the token and returns metadata.
+     *
+     * @param string $token Das zu prüfende Token (access_token oder refresh_token)
+     * @param string|null $tokenTypeHint Optional: "access_token" oder "refresh_token"
+     * @return IntrospectionResponse Token-Metadaten (active, scope, client_id, exp, etc.)
+     * @throws OidcProtocolException wenn kein introspection_endpoint konfiguriert
+     *
+     * @see https://datatracker.ietf.org/doc/html/rfc7662
+     */
+    public function introspectToken(string $token, ?string $tokenTypeHint = null): IntrospectionResponse
+    {
+        if ($this->config->introspectionEndpoint === null) {
+            throw new OidcProtocolException('No introspection_endpoint configured');
+        }
+
+        $this->logger->debug('Introspecting token', [
+            'token_type_hint' => $tokenTypeHint,
+            'token_length' => strlen($token),
+        ]);
+
+        $params = [
+            'token' => $token,
+            'client_id' => $this->config->clientId,
+        ];
+
+        // DE: Client-Authentifizierung (wenn Secret vorhanden)
+        // EN: Client authentication (if secret available)
+        if ($this->config->clientSecret !== null) {
+            $params['client_secret'] = $this->config->clientSecret;
+        }
+
+        // DE: Token-Type-Hint hilft dem Server, das Token schneller zu finden
+        // EN: Token type hint helps the server find the token faster
+        if ($tokenTypeHint !== null) {
+            $params['token_type_hint'] = $tokenTypeHint;
+        }
+
+        $response = $this->postForm($this->config->introspectionEndpoint, $params);
+
+        // DE: RFC 7662: Response muss immer "active" enthalten
+        // EN: RFC 7662: Response must always contain "active"
+        if (!isset($response['active'])) {
+            $this->logger->warning('Introspection response missing "active" field, treating as inactive');
+            return IntrospectionResponse::inactive();
+        }
+
+        $introspection = IntrospectionResponse::fromArray($response);
+
+        $this->logger->debug('Token introspection complete', [
+            'active' => $introspection->active,
+            'client_id' => $introspection->clientId,
+            'scope' => $introspection->scope,
+        ]);
+
+        return $introspection;
+    }
+
+    // =========================================================================
+    // Private Helper Methods
+    // =========================================================================
 
     /**
      * @param array<string, string> $params

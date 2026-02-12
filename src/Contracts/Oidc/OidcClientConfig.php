@@ -91,6 +91,14 @@ final class OidcClientConfig
          * @see https://datatracker.ietf.org/doc/html/rfc7662
          */
         public readonly ?string $introspectionEndpoint = null,
+
+        /**
+         * DE: Device Authorization Endpoint für Device Code Flow (optional, Server-to-Server).
+         * EN: Device authorization endpoint for device code flow (optional, server-to-server).
+         *
+         * @see https://datatracker.ietf.org/doc/html/rfc8628
+         */
+        public readonly ?string $deviceAuthorizationEndpoint = null,
     ) {
         // DE: Pflichtfelder validieren // EN: Validate required fields
         self::validateUrl($issuer, 'issuer');
@@ -117,6 +125,9 @@ final class OidcClientConfig
         }
         if ($introspectionEndpoint !== null) {
             self::validateUrl($introspectionEndpoint, 'introspectionEndpoint');
+        }
+        if ($deviceAuthorizationEndpoint !== null) {
+            self::validateUrl($deviceAuthorizationEndpoint, 'deviceAuthorizationEndpoint');
         }
     }
 

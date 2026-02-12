@@ -241,6 +241,7 @@ final class OidcClientFactory
         $endSessionEndpoint = $discovery->endSessionEndpoint;
         $revocationEndpoint = $discovery->revocationEndpoint;
         $introspectionEndpoint = $discovery->introspectionEndpoint;
+        $deviceAuthorizationEndpoint = $discovery->deviceAuthorizationEndpoint;
 
         // DE: HTTPS-Validierung für kritische Server-to-Server Endpoints
         // EN: HTTPS validation for critical server-to-server endpoints
@@ -284,6 +285,9 @@ final class OidcClientFactory
                 if ($introspectionEndpoint !== null) {
                     $introspectionEndpoint = self::replaceIssuerInUrl($introspectionEndpoint, $publicIssuerNormalized, $internalIssuerNormalized);
                 }
+                if ($deviceAuthorizationEndpoint !== null) {
+                    $deviceAuthorizationEndpoint = self::replaceIssuerInUrl($deviceAuthorizationEndpoint, $publicIssuerNormalized, $internalIssuerNormalized);
+                }
             }
             // DE: Discovery-Issuer entspricht internal Issuer → Browser-Endpoints auf public umschreiben
             // EN: Discovery issuer matches internal issuer → rewrite browser endpoints to public
@@ -308,6 +312,7 @@ final class OidcClientFactory
             publicIssuer: $publicIssuer,
             revocationEndpoint: $revocationEndpoint,
             introspectionEndpoint: $introspectionEndpoint,
+            deviceAuthorizationEndpoint: $deviceAuthorizationEndpoint,
         );
     }
 
