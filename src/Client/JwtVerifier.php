@@ -259,12 +259,19 @@ final class JwtVerifier
     private function encodeLength(int $length): string
     {
         if ($length < 0x80) {
+            /** @var int<0, 127> $length */
             return chr($length);
         }
 
         $temp = ltrim(pack('N', $length), "\x00");
+        $octetCount = strlen($temp);
 
-        return chr(0x80 | strlen($temp)) . $temp;
+        // DE: 0x80 | strlen($temp) ergibt Werte 0x81-0x84 (max 4 Oktetts für 32-bit)
+        // EN: 0x80 | strlen($temp) yields values 0x81-0x84 (max 4 octets for 32-bit)
+        /** @var int<129, 132> $lengthOctet */
+        $lengthOctet = 0x80 | $octetCount;
+
+        return chr($lengthOctet) . $temp;
     }
 
     /**

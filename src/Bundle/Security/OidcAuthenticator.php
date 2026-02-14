@@ -48,8 +48,6 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
         private readonly string $callbackRoute = '/auth/callback',
         #[Autowire('%eurip_sso.routes.after_login%')]
         private readonly string $defaultTargetPath = '/',
-        #[Autowire('%eurip_sso.routes.login%')]
-        private readonly string $loginPath = '/login',
         #[Autowire('%eurip_sso.routes.error%')]
         private readonly string $errorPath = '/auth/error',
         /** @var list<string> */
@@ -106,6 +104,13 @@ final class OidcAuthenticator extends AbstractAuthenticator implements Authentic
         // DE: ID-Token für SSO-Logout speichern // EN: Store ID token for SSO logout
         if ($this->lastIdToken !== null) {
             $request->getSession()->set(OidcConstants::SESSION_ID_TOKEN, $this->lastIdToken);
+        }
+
+        // DE: Session State für OIDC Session Management speichern
+        // EN: Store session state for OIDC session management
+        $sessionState = $request->query->getString('session_state');
+        if ($sessionState !== '' && $this->ssoTokenStorage !== null) {
+            $this->ssoTokenStorage->storeSessionState($sessionState);
         }
 
         // DE: Custom Response aus Event (z.B. Login blockieren) // EN: Custom response from event (e.g. block login)

@@ -99,6 +99,14 @@ final class OidcClientConfig
          * @see https://datatracker.ietf.org/doc/html/rfc8628
          */
         public readonly ?string $deviceAuthorizationEndpoint = null,
+
+        /**
+         * DE: Check Session Iframe URL für OIDC Session Management (optional, public URL).
+         * EN: Check session iframe URL for OIDC session management (optional, public URL).
+         *
+         * @see https://openid.net/specs/openid-connect-session-1_0.html
+         */
+        public readonly ?string $checkSessionIframe = null,
     ) {
         // DE: Pflichtfelder validieren // EN: Validate required fields
         self::validateUrl($issuer, 'issuer');

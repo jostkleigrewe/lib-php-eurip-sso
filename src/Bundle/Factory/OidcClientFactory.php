@@ -242,6 +242,7 @@ final class OidcClientFactory
         $revocationEndpoint = $discovery->revocationEndpoint;
         $introspectionEndpoint = $discovery->introspectionEndpoint;
         $deviceAuthorizationEndpoint = $discovery->deviceAuthorizationEndpoint;
+        $checkSessionIframe = $discovery->checkSessionIframe;
 
         // DE: HTTPS-Validierung für kritische Server-to-Server Endpoints
         // EN: HTTPS validation for critical server-to-server endpoints
@@ -313,6 +314,7 @@ final class OidcClientFactory
             revocationEndpoint: $revocationEndpoint,
             introspectionEndpoint: $introspectionEndpoint,
             deviceAuthorizationEndpoint: $deviceAuthorizationEndpoint,
+            checkSessionIframe: $checkSessionIframe,
         );
     }
 

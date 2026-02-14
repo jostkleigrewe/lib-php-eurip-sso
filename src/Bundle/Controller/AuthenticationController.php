@@ -175,7 +175,8 @@ final class AuthenticationController extends AbstractController
         // DE: Cancel-URL validieren (Open Redirect Prevention)
         // EN: Validate cancel URL (open redirect prevention)
         $referer = $request->headers->get('referer');
-        $cancelUrl = ($referer !== null && $this->isValidReturnUrl(parse_url($referer, PHP_URL_PATH) ?? ''))
+        $refererPath = $referer !== null ? parse_url($referer, PHP_URL_PATH) : null;
+        $cancelUrl = (is_string($refererPath) && $this->isValidReturnUrl($refererPath))
             ? $referer
             : $this->defaultTargetPath;
 

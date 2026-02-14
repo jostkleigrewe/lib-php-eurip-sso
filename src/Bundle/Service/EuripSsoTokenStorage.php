@@ -151,5 +151,25 @@ final class EuripSsoTokenStorage
         $session->remove(OidcConstants::SESSION_ACCESS_TOKEN);
         $session->remove(OidcConstants::SESSION_REFRESH_TOKEN);
         $session->remove(OidcConstants::SESSION_TOKEN_EXPIRES);
+        $session->remove(OidcConstants::SESSION_SSO_SESSION_STATE);
+    }
+
+    /**
+     * DE: Speichert den SSO Session State (für Session Management).
+     * EN: Stores the SSO session state (for session management).
+     */
+    public function storeSessionState(string $sessionState): void
+    {
+        $this->requestStack->getSession()->set(OidcConstants::SESSION_SSO_SESSION_STATE, $sessionState);
+    }
+
+    /**
+     * DE: Gibt den SSO Session State zurück.
+     * EN: Returns the SSO session state.
+     */
+    public function getSessionState(): ?string
+    {
+        $state = $this->requestStack->getSession()->get(OidcConstants::SESSION_SSO_SESSION_STATE);
+        return is_string($state) ? $state : null;
     }
 }

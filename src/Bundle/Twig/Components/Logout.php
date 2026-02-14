@@ -7,13 +7,14 @@ namespace Jostkleigrewe\Sso\Bundle\Twig\Components;
 use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Csrf\CsrfTokenManagerInterface;
-use Symfony\UX\TwigComponent\Attribute\AsTwigComponent;
 
 /**
  * DE: Twig-Komponente für sicheren Logout mit CSRF-Schutz.
  *     Rendert ein POST-Formular mit verstecktem CSRF-Token.
+ *     Benötigt symfony/ux-twig-component.
  * EN: Twig component for secure logout with CSRF protection.
  *     Renders a POST form with hidden CSRF token.
+ *     Requires symfony/ux-twig-component.
  *
  * @example
  * ```twig
@@ -26,8 +27,9 @@ use Symfony\UX\TwigComponent\Attribute\AsTwigComponent;
  * {# Als Link gestylt #}
  * <twig:EuripSso:Logout :asLink="true" />
  * ```
+ *
  */
-#[AsTwigComponent('EuripSso:Logout', template: '@EuripSso/components/Logout.html.twig')]
+#[\Symfony\UX\TwigComponent\Attribute\AsTwigComponent('EuripSso:Logout', template: '@EuripSso/components/Logout.html.twig')] // @phpstan-ignore attribute.notFound (optional dependency: symfony/ux-twig-component)
 final class Logout
 {
     /**

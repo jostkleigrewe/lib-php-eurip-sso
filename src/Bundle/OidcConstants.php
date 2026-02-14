@@ -24,6 +24,7 @@ final class OidcConstants
     public const string SESSION_REFRESH_TOKEN = '_eurip_sso_refresh_token';
     public const string SESSION_TOKEN_EXPIRES = '_eurip_sso_token_expires';
     public const string SESSION_AUTH_ERROR = '_eurip_sso_auth_error';
+    public const string SESSION_SSO_SESSION_STATE = '_eurip_sso_session_state';
 
     // Error TTL (5 minutes)
     public const int AUTH_ERROR_TTL = 300;

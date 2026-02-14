@@ -6,6 +6,8 @@ namespace Jostkleigrewe\Sso\Bundle\Twig;
 
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoAuthorizationService;
 use Jostkleigrewe\Sso\Bundle\Service\EuripSsoClaimsService;
+use Jostkleigrewe\Sso\Bundle\Service\EuripSsoTokenStorage;
+use Jostkleigrewe\Sso\Client\OidcClient;
 use Twig\Extension\AbstractExtension;
 use Twig\TwigFunction;
 
@@ -30,6 +32,8 @@ final class EuripSsoTwigExtension extends AbstractExtension
     public function __construct(
         private readonly EuripSsoClaimsService $claimsService,
         private readonly EuripSsoAuthorizationService $authorizationService,
+        private readonly ?EuripSsoTokenStorage $tokenStorage = null,
+        private readonly ?OidcClient $oidcClient = null,
     ) {
     }
 
@@ -47,6 +51,9 @@ final class EuripSsoTwigExtension extends AbstractExtension
             new TwigFunction('sso_has_permission', $this->hasPermission(...)),
             new TwigFunction('sso_has_group', $this->hasGroup(...)),
             new TwigFunction('sso_claim', $this->getClaim(...)),
+            // DE: Session Management Funktionen // EN: Session management functions
+            new TwigFunction('sso_session_management_config', $this->getSessionManagementConfig(...)),
+            new TwigFunction('sso_supports_session_management', $this->supportsSessionManagement(...)),
         ];
     }
 
@@ -121,5 +128,56 @@ final class EuripSsoTwigExtension extends AbstractExtension
     public function getClaim(string $name, mixed $default = null): mixed
     {
         return $this->claimsService->get($name, $default);
+    }
+
+    /**
+     * DE: Prüft ob OIDC Session Management unterstützt wird.
+     * EN: Checks if OIDC session management is supported.
+     */
+    public function supportsSessionManagement(): bool
+    {
+        if ($this->oidcClient === null || $this->tokenStorage === null) {
+            return false;
+        }
+
+        $config = $this->oidcClient->getConfig();
+
+        return $config->checkSessionIframe !== null
+            && $this->tokenStorage->getSessionState() !== null;
+    }
+
+    /**
+     * DE: Gibt die Konfiguration für OIDC Session Management zurück.
+     *     Für JavaScript-Integration im Frontend.
+     * EN: Returns the configuration for OIDC session management.
+     *     For JavaScript integration in the frontend.
+     *
+     * @return array{
+     *     checkSessionIframe: string,
+     *     clientId: string,
+     *     sessionState: string,
+     *     interval: int
+     * }|null
+     */
+    public function getSessionManagementConfig(int $intervalMs = 5000): ?array
+    {
+        // DE: Frühe Returns wenn nicht unterstützt // EN: Early returns if not supported
+        if ($this->oidcClient === null || $this->tokenStorage === null) {
+            return null;
+        }
+
+        $config = $this->oidcClient->getConfig();
+        $sessionState = $this->tokenStorage->getSessionState();
+
+        if ($config->checkSessionIframe === null || $sessionState === null) {
+            return null;
+        }
+
+        return [
+            'checkSessionIframe' => $config->checkSessionIframe,
+            'clientId' => $config->clientId,
+            'sessionState' => $sessionState,
+            'interval' => $intervalMs,
+        ];
     }
 }
