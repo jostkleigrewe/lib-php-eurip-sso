@@ -3,14 +3,18 @@
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-02-08
+## [0.3.0] - 2026-02-14
 
 ### BREAKING CHANGES
+
+**Minimum Requirements**
+- PHP 8.4+ (was 8.2+)
+- Symfony 7.0+ or 8.0+
 
 **Removed Config Options**
 - `controller.enabled` - Controllers are now always active (registered via resource scanning)
 - `client_services.enabled` / `client_services.store_access_token` - Services are now always auto-registered
-- `authenticator.callback_route` / `authenticator.default_target_path` / `authenticator.login_path` - Removed legacy authenticator options
+- `authenticator.callback_route` / `authenticator.default_target_path` / `authenticator.login_path` - Use `routes.*` instead
 
 **Removed Classes**
 - `EuripSsoFacade` - Use direct service injection instead
@@ -19,6 +23,7 @@ Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Removed Constants**
 - `::NAME` constants from all event classes - Use class-based dispatch (Symfony standard: `#[AsEventListener]` without `event:` parameter)
+- `OidcConstants::EVENT_*` constants - Events are now dispatched by class
 
 **Removed Service Aliases**
 - `eurip_sso.facade`, `eurip_sso.claims`, `eurip_sso.auth`, `eurip_sso.api`, `eurip_sso.token_storage` - Use FQCN injection instead
@@ -29,16 +34,22 @@ Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **Changed Constructor**
 - `OidcClient::__construct()` now requires `JwtVerifier` as 5th parameter (before optional `$logger`)
+- `OidcConstants` changed from interface to final class - remove `implements OidcConstants`
 
 ### Added
 
 **JwtVerifier (extracted from OidcClient)**
 - `JwtVerifier` - Dedicated class for JWT signature verification via JWKS
   - `verifySignature()` - RS256 signature verification with key-rotation resilience
-  - `preloadJwks()` / `fetchAndCacheJwks()` / `hasJwksLoaded()` / `invalidateJwksCache()` - JWKS cache management
+  - `fetchAndCacheJwks()` / `invalidateJwksCache()` - JWKS cache management
   - Automatic retry on key rotation (cache invalidate → refetch → verify)
   - Framework-agnostic (PSR-18 HTTP, PSR-17 Request Factory, PSR-3 Logger)
-- Registered as Symfony service via `OidcClient::getJwtVerifier()` factory method
+
+**Session Management**
+- `OidcSessionChangedEvent` - Dispatched when SSO session state changes
+- `sso_supports_session_management()` - Twig function to check IdP support
+- `sso_session_management_config(interval)` - Twig function for polling config
+- `SessionMonitor.html.twig` - Ready-to-use component for session monitoring
 
 **Controller Split**
 - `AuthenticationController` - Login, callback, logout, logout confirmation
@@ -58,10 +69,33 @@ Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **Console Commands**
 - `eurip:sso:cache-warmup` - Pre-fetch and cache OIDC discovery document + JWKS
 - `eurip:sso:test-connection` - Test connection to the OIDC provider
+- `eurip:sso:device-login` - CLI login via Device Code Flow (RFC 8628)
+- `eurip:sso:client-credentials` - Get M2M token via Client Credentials Flow
+- `eurip:sso:introspect` - Validate and inspect tokens (RFC 7662)
+
+**Twig Functions**
+- `sso_is_authenticated()` - Check if user is logged in
+- `sso_email()` - User's email address
+- `sso_name()` - User's display name
+- `sso_user_id()` - User's subject (sub claim)
+- `sso_has_role('ROLE_X')` - Check role (global or client-specific)
+- `sso_has_permission('x:y')` - Check permission
+- `sso_has_group('group')` - Check group membership
+- `sso_claim('key', 'default')` - Get any claim value
+
+**Twig Components** (requires `symfony/ux-twig-component`)
+- `<twig:EuripSso:Logout />` - Secure logout button with CSRF protection
+  - Props: `label`, `class`, `asLink`, `confirm`
 
 **Configuration**
 - `routes.logout_confirm` - GET endpoint for logout confirmation page (default: `/auth/logout/confirm`)
 - Routes now have sensible defaults: `profile: /auth/profile`, `debug: /auth/debug`, `test: /auth/test`
+
+**Documentation**
+- `docs/FLOW-DIAGRAMS.md` / `docs/FLOW-DIAGRAMS.de.md` - Mermaid sequence diagrams for all flows
+- `docs/SESSION-MANAGEMENT.md` / `docs/SESSION-MANAGEMENT.de.md` - Session management guide
+- `docs/DEVICE-CODE-FLOW.md` / `docs/DEVICE-CODE-FLOW.de.md` - RFC 8628 implementation
+- `docs/M2M-AUTHENTICATION.md` / `docs/M2M-AUTHENTICATION.de.md` - Client Credentials & Introspection
 
 ### Changed
 
@@ -78,6 +112,7 @@ Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 **Authenticator**
 - `OidcAuthenticator` now uses `SelfValidatingPassport` with `UserBadge`
 - `authenticator.enabled` is the only remaining toggle (default: `true`)
+- Removed unused `$loginPath` property
 
 **Routes**
 - Routes registered via `#[Route('%eurip_sso.routes.login%')]` attributes on controllers
@@ -86,17 +121,22 @@ Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 **OidcClientFactory**
 - `create()` now creates `JwtVerifier` and passes it to `OidcClient`
-- `preloadJwks()` now accepts `JwtVerifier` instead of `OidcClient`
+- `buildJwksCacheKey()` extracted as public method for cache warmup
 
 ### Fixed
 
+- `AuthenticationController` - `parse_url()` return type handling for referer validation
+- `JwtVerifier` - PHPStan int-range annotations for `chr()` calls
+- `Logout` component - PHPStan ignore for optional `symfony/ux-twig-component` dependency
 - Bundle now uses its own `vendor/autoload.php` for tests (not parent project's)
 
 ### Tests
 
-- 63 tests total (48 OidcClient + 15 JwtVerifier), all passing
+- 60 tests total (45 OidcClient + 15 JwtVerifier), all passing
 - JwtVerifier tests use real 2048-bit RSA key pairs
 - Tests cover: signature verification, key rotation, cache TTL, algorithm validation
+- PHPStan Level 6 with 0 errors
+- ECS PSR-12 compliant
 
 ---
 
@@ -124,14 +164,6 @@ Follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Security
 
 - Cancel-URL on logout confirmation page now validated against open redirect attacks
-
-### Files Added
-
-```
-src/Bundle/Twig/Components/Logout.php
-templates/components/Logout.html.twig
-templates/logout_confirm.html.twig
-```
 
 ---
 
@@ -191,13 +223,9 @@ templates/logout_confirm.html.twig
 
 **New Events**
 - `OidcPreLoginEvent` - Before IdP redirect
-  - Modify scopes via `setScopes()`
-  - Cancel with custom response via `setResponse()`
 - `OidcUserCreatedEvent` - After new user creation (before flush)
 - `OidcUserUpdatedEvent` - After user update (before flush)
 - `OidcPreLogoutEvent` - Before logout
-  - Skip SSO logout via `skipSsoLogout()`
-  - Cancel with custom response via `setResponse()`
 
 **New Exceptions**
 - `ClaimsValidationException` - JWT claims validation errors
@@ -207,60 +235,6 @@ templates/logout_confirm.html.twig
 - `OidcClientConfig` - Discovery configuration container
 - `TokenResponse` - Token exchange response
 - `UserInfoResponse` - UserInfo endpoint response
-
-**Templates**
-- `@EuripSso/profile.html.twig`
-- `@EuripSso/debug.html.twig`
-- `@EuripSso/test.html.twig`
-- `@EuripSso/layout.html.twig`
-
-### Changed
-
-**OidcLoginSuccessEvent**
-- Added `setRoles()`, `addRole()`, `removeRole()` for role modification
-- Added `setTargetPath()` for redirect override
-- Added `setResponse()` to block login with custom response
-
-**OidcLoginFailureEvent**
-- Added `setResponse()` for custom error handling
-
-**Configuration**
-- New section: `controller`
-- New section: `routes`
-- New section: `user_provider`
-
-### Files Added (vs v0.1.0)
-
-```
-src/Bundle/Controller/OidcController.php
-src/Bundle/Routing/OidcRouteLoader.php
-src/Bundle/Security/DoctrineOidcUserProvider.php
-src/Bundle/Security/OidcUser.php
-src/Bundle/Security/OidcSessionStorage.php
-src/Bundle/Event/OidcPreLoginEvent.php
-src/Bundle/Event/OidcUserCreatedEvent.php
-src/Bundle/Event/OidcUserUpdatedEvent.php
-src/Bundle/Event/OidcPreLogoutEvent.php
-src/Contracts/Exception/ClaimsValidationException.php
-src/Contracts/Exception/OidcProtocolException.php
-src/Contracts/DTO/TokenResponse.php
-src/Contracts/DTO/UserInfoResponse.php
-src/Contracts/Oidc/OidcClientConfig.php
-templates/profile.html.twig
-templates/debug.html.twig
-templates/test.html.twig
-templates/layout.html.twig
-```
-
-### Files Modified (vs v0.1.0)
-
-```
-src/Bundle/DependencyInjection/Configuration.php    # Extended config schema
-src/Bundle/DependencyInjection/EuripSsoExtension.php # Service registration
-src/Bundle/Event/OidcLoginSuccessEvent.php          # Role/redirect/response
-src/Bundle/Event/OidcLoginFailureEvent.php          # Custom response
-src/Client/OidcClient.php                           # Extended methods
-```
 
 ---
 
@@ -295,12 +269,6 @@ Initial release.
 - `OidcLoginSuccessEvent` - After successful login
 - `OidcLoginFailureEvent` - On login failure
 - `OidcTokenRefreshedEvent` - After token refresh
-
-**Exceptions**
-- `TokenExchangeFailedException` - Token exchange errors
-
-**Example**
-- `ExampleAuthController` - Integration template
 
 ### Requirements
 
