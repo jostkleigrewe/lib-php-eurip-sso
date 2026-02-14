@@ -10,6 +10,9 @@ namespace Jostkleigrewe\Sso\Contracts\Oidc;
  */
 final class OidcClientConfig
 {
+    /**
+     * @throws \InvalidArgumentException
+     */
     public function __construct(
         /**
          * DE: Client-ID, wie beim IdP registriert.
@@ -72,7 +75,86 @@ final class OidcClientConfig
          *     Used for authorization and end-session endpoints.
          */
         public readonly ?string $publicIssuer = null,
+
+        /**
+         * DE: Revocation Endpoint für Token-Widerruf (optional, Server-to-Server).
+         * EN: Revocation endpoint for token revocation (optional, server-to-server).
+         *
+         * @see https://datatracker.ietf.org/doc/html/rfc7009
+         */
+        public readonly ?string $revocationEndpoint = null,
+
+        /**
+         * DE: Introspection Endpoint für Token-Validierung (optional, Server-to-Server).
+         * EN: Introspection endpoint for token validation (optional, server-to-server).
+         *
+         * @see https://datatracker.ietf.org/doc/html/rfc7662
+         */
+        public readonly ?string $introspectionEndpoint = null,
+
+        /**
+         * DE: Device Authorization Endpoint für Device Code Flow (optional, Server-to-Server).
+         * EN: Device authorization endpoint for device code flow (optional, server-to-server).
+         *
+         * @see https://datatracker.ietf.org/doc/html/rfc8628
+         */
+        public readonly ?string $deviceAuthorizationEndpoint = null,
+
+        /**
+         * DE: Check Session Iframe URL für OIDC Session Management (optional, public URL).
+         * EN: Check session iframe URL for OIDC session management (optional, public URL).
+         *
+         * @see https://openid.net/specs/openid-connect-session-1_0.html
+         */
+        public readonly ?string $checkSessionIframe = null,
     ) {
+        // DE: Pflichtfelder validieren // EN: Validate required fields
+        self::validateUrl($issuer, 'issuer');
+        self::validateUrl($authorizationEndpoint, 'authorizationEndpoint');
+        self::validateUrl($tokenEndpoint, 'tokenEndpoint');
+        self::validateUrl($redirectUri, 'redirectUri');
+
+        // DE: Optionale URLs validieren (wenn gesetzt, müssen sie gültig sein)
+        // EN: Validate optional URLs (if set, they must be valid)
+        if ($jwksUri !== '') {
+            self::validateUrl($jwksUri, 'jwksUri');
+        }
+        if ($userInfoEndpoint !== '') {
+            self::validateUrl($userInfoEndpoint, 'userInfoEndpoint');
+        }
+        if ($publicIssuer !== null) {
+            self::validateUrl($publicIssuer, 'publicIssuer');
+        }
+        if ($endSessionEndpoint !== null) {
+            self::validateUrl($endSessionEndpoint, 'endSessionEndpoint');
+        }
+        if ($revocationEndpoint !== null) {
+            self::validateUrl($revocationEndpoint, 'revocationEndpoint');
+        }
+        if ($introspectionEndpoint !== null) {
+            self::validateUrl($introspectionEndpoint, 'introspectionEndpoint');
+        }
+        if ($deviceAuthorizationEndpoint !== null) {
+            self::validateUrl($deviceAuthorizationEndpoint, 'deviceAuthorizationEndpoint');
+        }
+    }
+
+    /**
+     * DE: Validiert eine URL auf korrektes Format.
+     * EN: Validates a URL for correct format.
+     *
+     * @throws \InvalidArgumentException
+     */
+    private static function validateUrl(string $url, string $fieldName): void
+    {
+        if ($url === '') {
+            throw new \InvalidArgumentException(sprintf('%s cannot be empty', $fieldName));
+        }
+
+        $parsed = parse_url($url);
+        if ($parsed === false || !isset($parsed['scheme'], $parsed['host'])) {
+            throw new \InvalidArgumentException(sprintf('%s must be a valid URL: %s', $fieldName, $url));
+        }
     }
 
     /**

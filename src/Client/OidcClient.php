@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Client;
 
+use Jostkleigrewe\Sso\Contracts\DTO\DeviceCodePollResult;
+use Jostkleigrewe\Sso\Contracts\DTO\DeviceCodeResponse;
+use Jostkleigrewe\Sso\Contracts\DTO\IntrospectionResponse;
 use Jostkleigrewe\Sso\Contracts\DTO\TokenResponse;
 use Jostkleigrewe\Sso\Contracts\DTO\UserInfoResponse;
 use Jostkleigrewe\Sso\Contracts\Exception\ClaimsValidationException;
@@ -22,10 +25,7 @@ use Psr\Log\NullLogger;
  */
 final class OidcClient
 {
-    private const CLOCK_SKEW_SECONDS = 60;
-
-    /** @var array<string, mixed>|null */
-    private ?array $jwksCache = null;
+    private const CLOCK_SKEW_SECONDS = 30;
 
     private LoggerInterface $logger;
 
@@ -34,6 +34,7 @@ final class OidcClient
         private readonly ClientInterface $httpClient,
         private readonly RequestFactoryInterface $requestFactory,
         private readonly StreamFactoryInterface $streamFactory,
+        private readonly JwtVerifier $jwtVerifier,
         ?LoggerInterface $logger = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
@@ -46,6 +47,15 @@ final class OidcClient
     public function getConfig(): OidcClientConfig
     {
         return $this->config;
+    }
+
+    /**
+     * DE: Gibt den JwtVerifier zurück.
+     * EN: Returns the JWT verifier.
+     */
+    public function getJwtVerifier(): JwtVerifier
+    {
+        return $this->jwtVerifier;
     }
 
     /**
@@ -89,6 +99,42 @@ final class OidcClient
     }
 
     /**
+     * DE: Erstellt die Authorization URL mit bestehendem State (für Doppelklick-Schutz).
+     * EN: Creates the authorization URL with existing state (for double-click protection).
+     *
+     * @param list<string> $scopes
+     */
+    public function buildAuthorizationUrlWithState(
+        string $state,
+        string $nonce,
+        string $codeVerifier,
+        array $scopes = ['openid', 'profile', 'email'],
+    ): string {
+        $codeChallenge = $this->generateCodeChallenge($codeVerifier);
+
+        $params = [
+            'response_type' => 'code',
+            'client_id' => $this->config->clientId,
+            'redirect_uri' => $this->config->redirectUri,
+            'scope' => implode(' ', $scopes),
+            'state' => $state,
+            'nonce' => $nonce,
+            'code_challenge' => $codeChallenge,
+            'code_challenge_method' => 'S256',
+        ];
+
+        $url = $this->config->authorizationEndpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
+
+        $this->logger->debug('Built authorization URL with existing state', [
+            'client_id' => $this->config->clientId,
+            'scopes' => $scopes,
+            'state_prefix' => substr($state, 0, 8) . '...',
+        ]);
+
+        return $url;
+    }
+
+    /**
      * DE: Erstellt die Logout-URL für SSO-Logout.
      * EN: Creates the logout URL for SSO logout.
      *
@@ -122,9 +168,18 @@ final class OidcClient
      * EN: Exchanges authorization code for tokens.
      *
      * @throws TokenExchangeFailedException
+     * @throws \InvalidArgumentException wenn code oder codeVerifier leer ist
      */
     public function exchangeCode(string $code, string $codeVerifier): TokenResponse
     {
+        // DE: Eingabevalidierung // EN: Input validation
+        if ($code === '') {
+            throw new \InvalidArgumentException('Authorization code must not be empty');
+        }
+        if ($codeVerifier === '') {
+            throw new \InvalidArgumentException('Code verifier must not be empty');
+        }
+
         $this->logger->debug('Exchanging authorization code for tokens');
 
         $params = [
@@ -155,13 +210,7 @@ final class OidcClient
 
         $this->logger->info('Token exchange successful');
 
-        return new TokenResponse(
-            accessToken: $response['access_token'],
-            idToken: $response['id_token'] ?? null,
-            refreshToken: $response['refresh_token'] ?? null,
-            expiresIn: (int) ($response['expires_in'] ?? 3600),
-            tokenType: $response['token_type'] ?? 'Bearer',
-        );
+        return TokenResponse::fromArray($response);
     }
 
     /**
@@ -200,13 +249,7 @@ final class OidcClient
 
         $this->logger->info('Token refresh successful');
 
-        return new TokenResponse(
-            accessToken: $response['access_token'],
-            idToken: $response['id_token'] ?? null,
-            refreshToken: $response['refresh_token'] ?? null,
-            expiresIn: (int) ($response['expires_in'] ?? 3600),
-            tokenType: $response['token_type'] ?? 'Bearer',
-        );
+        return TokenResponse::fromArray($response);
     }
 
     /**
@@ -240,16 +283,14 @@ final class OidcClient
 
         $this->logger->debug('UserInfo fetched successfully', ['sub' => $data['sub']]);
 
-        return new UserInfoResponse(
-            sub: $data['sub'],
-            email: $data['email'] ?? null,
-            name: $data['name'] ?? null,
-        );
+        return UserInfoResponse::fromArray($data);
     }
 
     /**
      * DE: Dekodiert und validiert ID Token.
+     *     Signatur-Verifikation wird an JwtVerifier delegiert.
      * EN: Decodes and validates ID token.
+     *     Signature verification is delegated to JwtVerifier.
      *
      * @param bool $verifySignature Wenn true, wird die Signatur via JWKS validiert
      * @param bool $validateClaims Wenn true, werden iss, aud, exp, iat validiert
@@ -260,7 +301,7 @@ final class OidcClient
      */
     public function decodeIdToken(
         string $idToken,
-        bool $verifySignature = false,
+        bool $verifySignature = true,
         bool $validateClaims = true,
         ?string $expectedNonce = null,
     ): array {
@@ -279,7 +320,7 @@ final class OidcClient
         }
 
         if ($verifySignature) {
-            $this->verifySignature($headerB64 . '.' . $payloadB64, $signatureB64, $header);
+            $this->jwtVerifier->verifySignature($headerB64 . '.' . $payloadB64, $signatureB64, $header);
             $this->logger->debug('ID token signature verified');
         }
 
@@ -347,177 +388,343 @@ final class OidcClient
         }
     }
 
+    // =========================================================================
+    // Device Authorization Grant (RFC 8628)
+    // =========================================================================
+
     /**
-     * DE: Validiert die Signatur eines ID Tokens.
-     * EN: Validates the signature of an ID token.
+     * DE: Fordert einen Device Code für den Device Authorization Grant an (RFC 8628).
+     *     Für Geräte ohne Browser (Smart TV, CLI, IoT).
+     * EN: Requests a device code for the device authorization grant (RFC 8628).
+     *     For devices without a browser (Smart TV, CLI, IoT).
      *
-     * @param array<string, mixed> $header
-     * @throws OidcProtocolException
-     */
-    private function verifySignature(string $data, string $signatureB64, array $header): void
-    {
-        $alg = $header['alg'] ?? null;
-        $kid = $header['kid'] ?? null;
-
-        if ($alg !== 'RS256') {
-            throw new OidcProtocolException('Unsupported algorithm: ' . ($alg ?? 'none'));
-        }
-
-        $jwks = $this->fetchJwks();
-        $key = $this->findKey($jwks, $kid);
-
-        if ($key === null) {
-            throw new OidcProtocolException('No matching key found in JWKS');
-        }
-
-        $publicKey = $this->jwkToPublicKey($key);
-        $signature = $this->base64UrlDecode($signatureB64);
-
-        $result = openssl_verify($data, $signature, $publicKey, OPENSSL_ALGO_SHA256);
-
-        if ($result !== 1) {
-            throw new OidcProtocolException('Invalid ID token signature');
-        }
-    }
-
-    /**
-     * DE: Lädt JWKS vorab (für Cache-Warmup).
-     * EN: Preloads JWKS data (for cache warmup).
+     * @param list<string> $scopes Die angeforderten Scopes
+     * @throws OidcProtocolException wenn kein device_authorization_endpoint konfiguriert ist
+     * @throws TokenExchangeFailedException bei Fehlern vom Provider
      *
-     * @param array<string, mixed> $jwks
+     * @see https://datatracker.ietf.org/doc/html/rfc8628#section-3.1
      */
-    public function preloadJwks(array $jwks): void
+    public function requestDeviceCode(array $scopes = ['openid', 'profile', 'email']): DeviceCodeResponse
     {
-        if (!isset($jwks['keys']) || !is_array($jwks['keys'])) {
-            throw new \InvalidArgumentException('Invalid JWKS format: missing keys array');
+        if ($this->config->deviceAuthorizationEndpoint === null) {
+            throw new OidcProtocolException('No device_authorization_endpoint configured');
         }
-        $this->jwksCache = $jwks;
-        $this->logger->debug('JWKS preloaded', ['keys_count' => count($jwks['keys'])]);
+
+        $this->logger->debug('Requesting device code', ['scopes' => $scopes]);
+
+        $params = [
+            'client_id' => $this->config->clientId,
+            'scope' => implode(' ', $scopes),
+        ];
+
+        if ($this->config->clientSecret !== null) {
+            $params['client_secret'] = $this->config->clientSecret;
+        }
+
+        $response = $this->postForm($this->config->deviceAuthorizationEndpoint, $params);
+
+        if (!isset($response['device_code'], $response['user_code'], $response['verification_uri'])) {
+            $error = $response['error'] ?? 'unknown_error';
+            $description = $response['error_description'] ?? 'Device authorization request failed';
+
+            $this->logger->error('Device code request failed', [
+                'error' => $error,
+                'error_description' => $description,
+            ]);
+
+            throw new TokenExchangeFailedException($error, $description);
+        }
+
+        $this->logger->info('Device code obtained', [
+            'user_code' => $response['user_code'],
+            'verification_uri' => $response['verification_uri'],
+            'expires_in' => $response['expires_in'] ?? 600,
+        ]);
+
+        return DeviceCodeResponse::fromArray($response);
     }
 
     /**
-     * DE: Ruft JWKS ab und gibt sie zurück (für Cache-Warmup).
-     * EN: Fetches JWKS and returns it (for cache warmup).
+     * DE: Pollt den Token-Endpoint für Device Code Flow (RFC 8628).
+     *     Gibt das Ergebnis des Polling-Versuchs zurück.
+     * EN: Polls the token endpoint for device code flow (RFC 8628).
+     *     Returns the result of the polling attempt.
      *
-     * @return array<string, mixed>
-     * @throws OidcProtocolException
+     * @param string $deviceCode Der Device Code aus requestDeviceCode()
+     * @param int $currentInterval Das aktuelle Polling-Intervall in Sekunden
+     * @return DeviceCodePollResult Das Ergebnis (success, pending, slow_down, error)
+     *
+     * @see https://datatracker.ietf.org/doc/html/rfc8628#section-3.4
+     * @see https://datatracker.ietf.org/doc/html/rfc8628#section-3.5
      */
-    public function fetchAndCacheJwks(): array
+    public function pollDeviceToken(string $deviceCode, int $currentInterval = 5): DeviceCodePollResult
     {
-        return $this->fetchJwks();
+        $this->logger->debug('Polling for device token');
+
+        $params = [
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:device_code',
+            'device_code' => $deviceCode,
+            'client_id' => $this->config->clientId,
+        ];
+
+        if ($this->config->clientSecret !== null) {
+            $params['client_secret'] = $this->config->clientSecret;
+        }
+
+        $response = $this->postForm($this->config->tokenEndpoint, $params);
+
+        // DE: Erfolg - Token erhalten // EN: Success - token received
+        if (isset($response['access_token'])) {
+            $this->logger->info('Device token obtained successfully');
+            return DeviceCodePollResult::success(TokenResponse::fromArray($response));
+        }
+
+        // DE: Fehler auswerten // EN: Evaluate error
+        $error = $response['error'] ?? 'unknown_error';
+        $description = $response['error_description'] ?? null;
+
+        return match ($error) {
+            // DE: Noch ausstehend - weiter polling // EN: Still pending - continue polling
+            'authorization_pending' => $this->handleAuthorizationPending(),
+
+            // DE: Zu schnell - Intervall erhöhen // EN: Too fast - increase interval
+            'slow_down' => $this->handleSlowDown($currentInterval),
+
+            // DE: User hat abgelehnt // EN: User denied
+            'access_denied' => $this->handleAccessDenied($description),
+
+            // DE: Code abgelaufen // EN: Code expired
+            'expired_token' => $this->handleExpiredToken($description),
+
+            // DE: Unbekannter Fehler als expired behandeln // EN: Treat unknown error as expired
+            default => $this->handleUnknownError($error, $description),
+        };
     }
 
     /**
-     * DE: Prüft ob JWKS bereits geladen sind.
-     * EN: Checks if JWKS are already loaded.
+     * DE: Führt Device Code Flow komplett durch (Polling-Loop).
+     *     Blockiert bis Token erhalten oder Fehler/Timeout.
+     * EN: Executes complete device code flow (polling loop).
+     *     Blocks until token received or error/timeout.
+     *
+     * @param DeviceCodeResponse $deviceCode Der Device Code aus requestDeviceCode()
+     * @param callable|null $onPoll Callback bei jedem Poll (für Progress-Anzeige)
+     *                              Signatur: fn(int $attempt, int $interval): void
+     * @return TokenResponse Die erhaltenen Tokens
+     * @throws TokenExchangeFailedException bei Fehler oder Timeout
      */
-    public function hasJwksLoaded(): bool
-    {
-        return $this->jwksCache !== null;
-    }
+    public function awaitDeviceToken(
+        DeviceCodeResponse $deviceCode,
+        ?callable $onPoll = null,
+    ): TokenResponse {
+        $interval = $deviceCode->interval;
+        $attempt = 0;
+        $maxAttempts = (int) ceil($deviceCode->expiresIn / $interval) + 5; // DE: Sicherheitspuffer // EN: Safety buffer
 
-    /**
-     * @return array<string, mixed>
-     * @throws OidcProtocolException
-     */
-    private function fetchJwks(): array
-    {
-        if ($this->jwksCache !== null) {
-            return $this->jwksCache;
-        }
+        while ($attempt < $maxAttempts) {
+            $attempt++;
 
-        $this->logger->debug('Fetching JWKS', ['uri' => $this->config->jwksUri]);
-
-        $request = $this->requestFactory->createRequest('GET', $this->config->jwksUri)
-            ->withHeader('Accept', 'application/json');
-
-        $response = $this->httpClient->sendRequest($request);
-
-        if ($response->getStatusCode() !== 200) {
-            throw new OidcProtocolException('JWKS request failed: ' . $response->getStatusCode());
-        }
-
-        $data = json_decode((string) $response->getBody(), true);
-
-        if (!is_array($data) || !isset($data['keys'])) {
-            throw new OidcProtocolException('Invalid JWKS response');
-        }
-
-        $this->jwksCache = $data;
-
-        return $data;
-    }
-
-    /**
-     * @param array<string, mixed> $jwks
-     * @return array<string, mixed>|null
-     */
-    private function findKey(array $jwks, ?string $kid): ?array
-    {
-        foreach ($jwks['keys'] as $key) {
-            if ($kid === null || ($key['kid'] ?? null) === $kid) {
-                if (($key['use'] ?? 'sig') === 'sig' && ($key['kty'] ?? null) === 'RSA') {
-                    return $key;
-                }
+            if ($onPoll !== null) {
+                $onPoll($attempt, $interval);
             }
+
+            // DE: Warten vor Poll (außer beim ersten Versuch)
+            // EN: Wait before poll (except on first attempt)
+            if ($attempt > 1) {
+                sleep($interval);
+            }
+
+            $result = $this->pollDeviceToken($deviceCode->deviceCode, $interval);
+
+            if ($result->isSuccess() && $result->tokenResponse !== null) {
+                return $result->tokenResponse;
+            }
+
+            if ($result->isError()) {
+                throw new TokenExchangeFailedException(
+                    $result->status,
+                    $result->errorDescription ?? 'Device authorization failed',
+                );
+            }
+
+            // DE: Intervall anpassen wenn nötig // EN: Adjust interval if needed
+            $interval = $result->getRecommendedInterval($interval);
         }
 
-        return null;
+        throw new TokenExchangeFailedException('timeout', 'Device code polling timed out');
     }
+
+    private function handleAuthorizationPending(): DeviceCodePollResult
+    {
+        $this->logger->debug('Authorization pending, continue polling');
+        return DeviceCodePollResult::pending();
+    }
+
+    private function handleSlowDown(int $currentInterval): DeviceCodePollResult
+    {
+        $this->logger->debug('Slow down requested, increasing interval', [
+            'current_interval' => $currentInterval,
+            'new_interval' => $currentInterval + 5,
+        ]);
+        return DeviceCodePollResult::slowDown($currentInterval);
+    }
+
+    private function handleAccessDenied(?string $description): DeviceCodePollResult
+    {
+        $this->logger->warning('Device authorization denied by user');
+        return DeviceCodePollResult::accessDenied($description);
+    }
+
+    private function handleExpiredToken(?string $description): DeviceCodePollResult
+    {
+        $this->logger->warning('Device code expired');
+        return DeviceCodePollResult::expired($description);
+    }
+
+    private function handleUnknownError(string $error, ?string $description): DeviceCodePollResult
+    {
+        $this->logger->error('Unknown device token error', [
+            'error' => $error,
+            'error_description' => $description,
+        ]);
+        return DeviceCodePollResult::expired($description ?? sprintf('Unknown error: %s', $error));
+    }
+
+    // =========================================================================
+    // Client Credentials Grant (RFC 6749 Section 4.4)
+    // =========================================================================
 
     /**
-     * @param array<string, mixed> $jwk
-     * @throws OidcProtocolException
+     * DE: Holt Access Token via Client Credentials Grant (RFC 6749 §4.4).
+     *     Für Machine-to-Machine (M2M) Kommunikation ohne User-Interaktion.
+     *     Typische Anwendungsfälle: Cronjobs, Microservices, Backend-Integrationen.
+     *
+     * EN: Gets access token via client credentials grant (RFC 6749 §4.4).
+     *     For machine-to-machine (M2M) communication without user interaction.
+     *     Typical use cases: cronjobs, microservices, backend integrations.
+     *
+     * @param list<string> $scopes Die angeforderten Scopes (optional)
+     * @return TokenResponse Access Token (kein id_token, normalerweise kein refresh_token)
+     * @throws OidcProtocolException wenn kein client_secret konfiguriert ist
+     * @throws TokenExchangeFailedException bei Fehlern vom Provider
+     *
+     * @see https://datatracker.ietf.org/doc/html/rfc6749#section-4.4
      */
-    private function jwkToPublicKey(array $jwk): \OpenSSLAsymmetricKey
+    public function getClientCredentialsToken(array $scopes = []): TokenResponse
     {
-        if (!isset($jwk['n'], $jwk['e'])) {
-            throw new OidcProtocolException('Invalid JWK: missing n or e');
+        // DE: Client Credentials erfordert ein Client Secret (confidential client)
+        // EN: Client credentials requires a client secret (confidential client)
+        if ($this->config->clientSecret === null) {
+            throw new OidcProtocolException(
+                'Client credentials grant requires a client_secret (confidential client)'
+            );
         }
 
-        $n = $this->base64UrlDecode($jwk['n']);
-        $e = $this->base64UrlDecode($jwk['e']);
+        $this->logger->debug('Requesting client credentials token', ['scopes' => $scopes]);
 
-        // Build DER-encoded RSA public key
-        $modulus = $this->encodeInteger($n);
-        $exponent = $this->encodeInteger($e);
+        $params = [
+            'grant_type' => 'client_credentials',
+            'client_id' => $this->config->clientId,
+            'client_secret' => $this->config->clientSecret,
+        ];
 
-        $rsaPublicKey = "\x30" . $this->encodeLength(strlen($modulus) + strlen($exponent)) . $modulus . $exponent;
-        $algorithmIdentifier = "\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00";
-        $bitString = "\x03" . $this->encodeLength(strlen($rsaPublicKey) + 1) . "\x00" . $rsaPublicKey;
-        $der = "\x30" . $this->encodeLength(strlen($algorithmIdentifier) + strlen($bitString)) . $algorithmIdentifier . $bitString;
-
-        $pem = "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END PUBLIC KEY-----";
-
-        $key = openssl_pkey_get_public($pem);
-
-        if ($key === false) {
-            throw new OidcProtocolException('Failed to parse public key from JWK');
+        if ($scopes !== []) {
+            $params['scope'] = implode(' ', $scopes);
         }
 
-        return $key;
+        $response = $this->postForm($this->config->tokenEndpoint, $params);
+
+        if (!isset($response['access_token'])) {
+            $error = $response['error'] ?? 'unknown_error';
+            $description = $response['error_description'] ?? 'Client credentials token request failed';
+
+            $this->logger->error('Client credentials token request failed', [
+                'error' => $error,
+                'error_description' => $description,
+            ]);
+
+            throw new TokenExchangeFailedException($error, $description);
+        }
+
+        $this->logger->info('Client credentials token obtained', [
+            'expires_in' => $response['expires_in'] ?? 'unknown',
+            'scope' => $response['scope'] ?? 'none',
+        ]);
+
+        return TokenResponse::fromArray($response);
     }
 
-    private function encodeInteger(string $data): string
+    // =========================================================================
+    // Token Introspection (RFC 7662)
+    // =========================================================================
+
+    /**
+     * DE: Validiert ein Token via Introspection Endpoint (RFC 7662).
+     *     Für Resource Server (APIs), die eingehende Bearer Tokens prüfen müssen.
+     *     Der SSO-Server prüft das Token und gibt Metadaten zurück.
+     *
+     * EN: Validates a token via introspection endpoint (RFC 7662).
+     *     For resource servers (APIs) that need to validate incoming bearer tokens.
+     *     The SSO server validates the token and returns metadata.
+     *
+     * @param string $token Das zu prüfende Token (access_token oder refresh_token)
+     * @param string|null $tokenTypeHint Optional: "access_token" oder "refresh_token"
+     * @return IntrospectionResponse Token-Metadaten (active, scope, client_id, exp, etc.)
+     * @throws OidcProtocolException wenn kein introspection_endpoint konfiguriert
+     *
+     * @see https://datatracker.ietf.org/doc/html/rfc7662
+     */
+    public function introspectToken(string $token, ?string $tokenTypeHint = null): IntrospectionResponse
     {
-        // Add leading zero if high bit is set (to ensure positive integer)
-        if (ord($data[0]) > 0x7f) {
-            $data = "\x00" . $data;
+        if ($this->config->introspectionEndpoint === null) {
+            throw new OidcProtocolException('No introspection_endpoint configured');
         }
 
-        return "\x02" . $this->encodeLength(strlen($data)) . $data;
-    }
+        $this->logger->debug('Introspecting token', [
+            'token_type_hint' => $tokenTypeHint,
+            'token_length' => strlen($token),
+        ]);
 
-    private function encodeLength(int $length): string
-    {
-        if ($length < 0x80) {
-            return chr($length);
+        $params = [
+            'token' => $token,
+            'client_id' => $this->config->clientId,
+        ];
+
+        // DE: Client-Authentifizierung (wenn Secret vorhanden)
+        // EN: Client authentication (if secret available)
+        if ($this->config->clientSecret !== null) {
+            $params['client_secret'] = $this->config->clientSecret;
         }
 
-        $temp = ltrim(pack('N', $length), "\x00");
+        // DE: Token-Type-Hint hilft dem Server, das Token schneller zu finden
+        // EN: Token type hint helps the server find the token faster
+        if ($tokenTypeHint !== null) {
+            $params['token_type_hint'] = $tokenTypeHint;
+        }
 
-        return chr(0x80 | strlen($temp)) . $temp;
+        $response = $this->postForm($this->config->introspectionEndpoint, $params);
+
+        // DE: RFC 7662: Response muss immer "active" enthalten
+        // EN: RFC 7662: Response must always contain "active"
+        if (!isset($response['active'])) {
+            $this->logger->warning('Introspection response missing "active" field, treating as inactive');
+            return IntrospectionResponse::inactive();
+        }
+
+        $introspection = IntrospectionResponse::fromArray($response);
+
+        $this->logger->debug('Token introspection complete', [
+            'active' => $introspection->active,
+            'client_id' => $introspection->clientId,
+            'scope' => $introspection->scope,
+        ]);
+
+        return $introspection;
     }
+
+    // =========================================================================
+    // Private Helper Methods
+    // =========================================================================
 
     /**
      * @param array<string, string> $params
@@ -556,13 +763,29 @@ final class OidcClient
         return rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
     }
 
+    /**
+     * DE: Dekodiert Base64URL-kodierten String.
+     * EN: Decodes Base64URL-encoded string.
+     *
+     * @throws OidcProtocolException wenn Dekodierung fehlschlägt
+     */
     private function base64UrlDecode(string $input): string
     {
+        if ($input === '') {
+            throw new OidcProtocolException('Base64URL decode failed: empty input');
+        }
+
         $remainder = strlen($input) % 4;
         if ($remainder) {
             $input .= str_repeat('=', 4 - $remainder);
         }
 
-        return base64_decode(strtr($input, '-_', '+/'), true) ?: '';
+        $decoded = base64_decode(strtr($input, '-_', '+/'), true);
+
+        if ($decoded === false) {
+            throw new OidcProtocolException('Base64URL decode failed: invalid encoding');
+        }
+
+        return $decoded;
     }
 }

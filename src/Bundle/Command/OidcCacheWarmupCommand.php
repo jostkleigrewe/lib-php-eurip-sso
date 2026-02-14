@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Command;
 
+use Jostkleigrewe\Sso\Bundle\Factory\OidcClientFactory;
+use Jostkleigrewe\Sso\Client\JwtVerifier;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -12,6 +14,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * DE: Console Command zum Aufwärmen des OIDC Caches.
@@ -27,7 +30,9 @@ final class OidcCacheWarmupCommand extends Command
 {
     public function __construct(
         private readonly OidcClient $oidcClient,
+        private readonly JwtVerifier $jwtVerifier,
         private readonly ?CacheItemPoolInterface $cache = null,
+        #[Autowire('%eurip_sso.cache.ttl%')]
         private readonly int $cacheTtl = 3600,
     ) {
         parent::__construct();
@@ -80,10 +85,10 @@ HELP
             $config = $this->oidcClient->getConfig();
             $io->text(sprintf('Issuer: <info>%s</info>', $config->issuer));
 
-            // Check if already cached (unless force)
-            if (!$force && $this->oidcClient->hasJwksLoaded()) {
-                $io->success('JWKS already loaded in memory.');
-                return Command::SUCCESS;
+            // DE: Bei --force Cache invalidieren, damit frisch geladen wird
+            // EN: On --force invalidate cache so it's freshly loaded
+            if ($force) {
+                $this->jwtVerifier->invalidateJwksCache();
             }
 
             // Warm up JWKS
@@ -91,15 +96,16 @@ HELP
             $io->text(sprintf('JWKS URI: <info>%s</info>', $config->jwksUri));
 
             $startTime = microtime(true);
-            $jwks = $this->oidcClient->fetchAndCacheJwks();
+            $jwks = $this->jwtVerifier->fetchAndCacheJwks();
             $duration = round((microtime(true) - $startTime) * 1000);
 
             $keyCount = count($jwks['keys'] ?? []);
             $io->text(sprintf('Loaded <info>%d</info> keys in <info>%d ms</info>', $keyCount, $duration));
 
-            // Cache JWKS if cache pool is available
+            // DE: JWKS im persistenten Cache speichern
+            // EN: Store JWKS in persistent cache
             if ($this->cache !== null) {
-                $cacheKey = 'eurip_sso.jwks.' . md5($config->jwksUri);
+                $cacheKey = OidcClientFactory::buildJwksCacheKey($config->jwksUri);
                 $cacheItem = $this->cache->getItem($cacheKey);
                 $cacheItem->set($jwks);
                 $cacheItem->expiresAfter($this->cacheTtl);

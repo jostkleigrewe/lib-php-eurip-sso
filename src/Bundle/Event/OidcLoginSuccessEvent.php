@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Event;
 
-use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Jostkleigrewe\Sso\Contracts\DTO\TokenResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -18,8 +17,6 @@ use Symfony\Contracts\EventDispatcher\Event;
  */
 final class OidcLoginSuccessEvent extends Event
 {
-    public const NAME = OidcConstants::EVENT_LOGIN_SUCCESS;
-
     /** @var list<string> */
     private array $roles;
 

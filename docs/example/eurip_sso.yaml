@@ -1,0 +1,199 @@
+# EURIP SSO Bundle - Example Configuration (v0.3.x)
+# Copy this file to your Symfony app: config/packages/eurip_sso.yaml
+#
+# DE: Beispiel-Konfiguration für das EURIP SSO Bundle.
+# EN: Example configuration for the EURIP SSO Bundle.
+#
+# Required environment variables:
+#   SSO_ISSUER_URL   - OIDC Provider URL (e.g., https://sso.example.com)
+#   OIDC_CLIENT_ID   - Your OIDC client ID
+#   APP_URL          - Your application's public URL
+
+eurip_sso:
+    # ============================================================
+    # REQUIRED - These must be set for the bundle to work
+    # ============================================================
+
+    # OIDC Issuer URL (internal URL for server-to-server communication)
+    issuer: '%env(SSO_ISSUER_URL)%'
+
+    # Client ID registered with the OIDC provider
+    client_id: '%env(OIDC_CLIENT_ID)%'
+
+    # Callback URL (must match the registered redirect URI)
+    redirect_uri: '%env(APP_URL)%/auth/callback'
+
+    # ============================================================
+    # OPTIONAL - Connection & Protocol Settings
+    # ============================================================
+
+    # Client secret (only needed for confidential clients)
+    # client_secret: '%env(OIDC_CLIENT_SECRET)%'
+
+    # Public issuer URL for browser redirects (Docker/K8s environments)
+    # Use when internal issuer URL differs from public URL
+    # public_issuer: 'https://sso.example.com'
+
+    # Scopes to request from the OIDC provider
+    scopes:
+        - openid
+        - profile
+        - email
+
+    # ============================================================
+    # SECURITY
+    # ============================================================
+
+    # Require HTTPS for all OIDC endpoints (issuer, token, jwks, userinfo)
+    # IMPORTANT: Only set to false for local development!
+    # Allowed non-HTTPS: localhost, 127.0.0.1, [::1], host.docker.internal
+    require_https: true
+
+    # ============================================================
+    # CACHE - Discovery document and JWKS caching
+    # ============================================================
+
+    cache:
+        enabled: true
+        ttl: 3600           # Cache TTL in seconds (1 hour)
+        pool: cache.app     # Symfony cache pool to use
+
+    # ============================================================
+    # AUTHENTICATOR - Symfony Security Integration
+    # ============================================================
+
+    authenticator:
+        enabled: true            # Register OidcAuthenticator for Symfony Security
+        verify_signature: true   # SECURITY: Always keep this enabled!
+
+    # ============================================================
+    # ROUTES - Authentication Endpoints
+    # ============================================================
+
+    # NOTE: Logout is POST-only and requires CSRF token!
+    routes:
+        login: /auth/login              # Start SSO login
+        callback: /auth/callback        # OIDC callback endpoint
+        logout: /auth/logout            # Logout endpoint (POST with CSRF!)
+        logout_confirm: /auth/logout/confirm  # Optional: GET page with logout button
+        after_login: /                  # Redirect after successful login
+        after_logout: /                 # Redirect after logout
+
+        # Optional routes (set to null to disable)
+        profile: /auth/profile          # User profile page
+        debug: /auth/debug              # OIDC configuration debug page
+        test: /auth/test                # Auth workflow test page
+
+        # OpenID Connect Logout Extensions (optional)
+        # backchannel_logout: /auth/backchannel-logout   # POST endpoint
+        # frontchannel_logout: /auth/frontchannel-logout # GET endpoint (iframe)
+
+    # ============================================================
+    # USER PROVIDER - Automatic User Provisioning
+    # ============================================================
+
+    user_provider:
+        enabled: true
+
+        # Your User entity class
+        entity: App\Entity\User
+
+        # Map OIDC claims to entity properties
+        mapping:
+            # Required: OIDC identifiers
+            subject: oidcSubject      # Property for OIDC subject (unique user ID)
+            issuer: oidcIssuer        # Property for OIDC issuer
+
+            # Optional: Additional fields to map
+            email: email              # Property for email
+            roles: roles              # Property for local app roles
+            external_roles: externalRoles  # Property for SSO roles
+
+        # Sync additional claims to entity properties
+        # Format: 'claim_name': 'entityProperty'
+        claims_sync: {}
+            # name: displayName
+            # locale: preferredLanguage
+            # picture: avatarUrl
+
+        # Claim name that contains user roles
+        roles_claim: roles
+
+        # Default roles for new users
+        default_roles:
+            - ROLE_USER
+
+        # Sync SSO data on every login
+        sync_on_login: true
+
+        # Auto-create users on first login
+        auto_create: true
+
+# ================================================================
+# SECURITY.YAML - Required Configuration
+# ================================================================
+#
+# Add this to your config/packages/security.yaml:
+#
+# security:
+#     providers:
+#         app_user_provider:
+#             id: Jostkleigrewe\Sso\Bundle\Security\DoctrineOidcUserProvider
+#
+#     firewalls:
+#         main:
+#             lazy: true
+#             provider: app_user_provider
+#             custom_authenticators:
+#                 - Jostkleigrewe\Sso\Bundle\Security\OidcAuthenticator
+#
+# ================================================================
+# USER ENTITY - Required Properties
+# ================================================================
+#
+# Your User entity must have properties matching the mapping config:
+#
+# class User implements UserInterface
+# {
+#     #[ORM\Column(length: 255)]
+#     private ?string $oidcSubject = null;
+#
+#     #[ORM\Column(length: 255)]
+#     private ?string $oidcIssuer = null;
+#
+#     #[ORM\Column(type: 'json')]
+#     private array $roles = ['ROLE_USER'];
+#
+#     #[ORM\Column(type: 'json')]
+#     private array $externalRoles = [];
+#
+#     // ... getters and setters
+# }
+#
+# ================================================================
+# EVENTS - Customize the Auth Flow (class-based dispatch)
+# ================================================================
+#
+# Available events (9 total):
+#   - OidcPreLoginEvent            Before IdP redirect
+#   - OidcLoginSuccessEvent        After successful login
+#   - OidcLoginFailureEvent        On authentication error
+#   - OidcUserCreatedEvent         New user created
+#   - OidcUserUpdatedEvent         Existing user updated
+#   - OidcPreLogoutEvent           Before logout
+#   - OidcTokenRefreshedEvent      After token refresh
+#   - OidcBackchannelLogoutEvent   Back-channel logout received
+#   - OidcFrontchannelLogoutEvent  Front-channel logout received
+#
+# Example listener (v0.3.x uses class-based dispatch):
+#
+# #[AsEventListener]
+# class AddAdminRoleListener
+# {
+#     public function __invoke(OidcLoginSuccessEvent $event): void
+#     {
+#         if (in_array('admin', $event->claims['groups'] ?? [])) {
+#             $event->addRole('ROLE_ADMIN');
+#         }
+#     }
+# }

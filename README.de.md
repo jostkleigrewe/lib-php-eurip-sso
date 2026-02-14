@@ -8,18 +8,22 @@ OIDC Client Library und Symfony Bundle für Single Sign-On.
 
 - **Zero-Code Integration** - Komplette OIDC-Authentifizierung nur durch Konfiguration
 - OIDC Authorization Code Flow mit PKCE (S256)
+- **Device Authorization Grant (RFC 8628)** - Für CLI, Smart TV, IoT
+- **Client Credentials Flow** - Machine-to-Machine Authentifizierung
+- **Token Introspection (RFC 7662)** - Tokens validieren und inspizieren
+- **Session Management** - SSO-Session-Änderungen in Echtzeit erkennen
 - Auto-Discovery via `.well-known/openid-configuration`
-- Dual-URL Support (interne/öffentliche Issuer-URL für Docker/K8s)
+- Dual-URL Support für Docker/Kubernetes-Umgebungen
 - Automatische User-Provisionierung mit Doctrine
-- Hybrid User Strategy (SSO-Daten synchronisieren, lokale Daten behalten)
-- Umfangreiches Event-System (6 Events)
+- JWT-Signaturprüfung mit Key-Rotation-Resilienz
+- Umfangreiches Event-System (9 Events)
+- Twig-Funktionen für Templates
 - PSR-3 Logging, PSR-18 HTTP Client
 
 ## Voraussetzungen
 
-- PHP 8.2+
+- PHP 8.4+
 - Symfony 7.0+ oder 8.0+
-- PSR-18 HTTP Client
 
 ## Installation
 
@@ -32,7 +36,7 @@ composer require jostkleigrewe/lib-php-eurip-sso
 Jostkleigrewe\Sso\Bundle\EuripSsoBundle::class => ['all' => true],
 ```
 
-## Quick Start: Zero-Code Integration
+## Quick Start
 
 ### 1. Bundle konfigurieren
 
@@ -43,28 +47,12 @@ eurip_sso:
     client_id: '%env(OIDC_CLIENT_ID)%'
     redirect_uri: '%env(APP_URL)%/auth/callback'
 
-    controller:
-        enabled: true
-
-    routes:
-        login: /auth/login
-        callback: /auth/callback
-        logout: /auth/logout
-        after_login: /
-        profile: /auth/profile    # optional
-        debug: /auth/debug        # optional
-
     user_provider:
         enabled: true
         entity: App\Entity\User
         mapping:
             subject: oidcSubject
             issuer: oidcIssuer
-            email: email
-            roles: roles
-            external_roles: externalRoles
-        sync_on_login: true
-        auto_create: true
 ```
 
 ### 2. Security konfigurieren
@@ -80,178 +68,217 @@ security:
         main:
             lazy: true
             provider: app_user_provider
-            custom_authenticator: App\Security\NoopAuthenticator
+            custom_authenticators:
+                - Jostkleigrewe\Sso\Bundle\Security\OidcAuthenticator
 ```
 
 **Fertig!** Verfügbare Routen:
 - `/auth/login` - Login starten
 - `/auth/callback` - SSO Callback
-- `/auth/logout` - Logout
+- `/auth/logout` - Logout (POST mit CSRF)
 - `/auth/profile` - User-Profil
-- `/auth/debug` - OIDC-Konfiguration
 
-## Hybrid User Strategy
+## Twig-Funktionen
 
-**Vom SSO synchronisiert (bei jedem Login):**
-- Email
-- External Roles (Gruppen/Rollen aus SSO)
-- Weitere Claims (konfigurierbar via `claims_sync`)
+SSO-Daten direkt in Templates verwenden:
 
-**Lokal in der App:**
-- App-spezifische Rollen (z.B. ROLE_ADMIN manuell vergeben)
-- User Preferences
-- App-spezifische Daten
+```twig
+{% if sso_is_authenticated() %}
+    Hallo {{ sso_name() ?? sso_email() }}!
+
+    {% if sso_has_role('ROLE_ADMIN') %}
+        <a href="/admin">Admin-Bereich</a>
+    {% endif %}
+
+    {% if sso_has_permission('users:edit') %}
+        <a href="/users">Benutzer verwalten</a>
+    {% endif %}
+{% endif %}
+```
+
+### Verfügbare Funktionen
+
+| Funktion | Beschreibung |
+|----------|--------------|
+| `sso_is_authenticated()` | Prüft ob User eingeloggt ist |
+| `sso_email()` | E-Mail-Adresse des Users |
+| `sso_name()` | Anzeigename des Users |
+| `sso_user_id()` | Subject des Users (sub Claim) |
+| `sso_has_role('ROLE_X')` | Prüft Rolle (global oder Client) |
+| `sso_has_permission('x:y')` | Prüft Berechtigung |
+| `sso_has_group('group')` | Prüft Gruppenzugehörigkeit |
+| `sso_claim('key', 'default')` | Beliebigen Claim-Wert abrufen |
+| `sso_supports_session_management()` | Prüft ob IdP Session Management unterstützt |
+| `sso_session_management_config(5000)` | Config für Session-Polling |
+
+### Logout-Komponente
+
+Sicherer Logout mit CSRF-Schutz (benötigt `symfony/ux-twig-component`):
+
+```twig
+{# Einfacher Button #}
+<twig:EuripSso:Logout />
+
+{# Gestylter Button #}
+<twig:EuripSso:Logout label="Abmelden" class="btn btn-danger" />
+
+{# Als Link #}
+<twig:EuripSso:Logout :asLink="true" />
+
+{# Mit Bestätigung #}
+<twig:EuripSso:Logout confirm="Wirklich abmelden?" />
+```
+
+### Session Monitor
+
+SSO-Session-Änderungen erkennen (Logout aus anderer App):
+
+```twig
+{% if sso_supports_session_management() %}
+    {% include '@EuripSso/components/SessionMonitor.html.twig' %}
+{% endif %}
+```
+
+## Konsolen-Befehle
+
+```bash
+bin/console eurip:sso:cache-warmup        # OIDC-Config + JWKS vorladen
+bin/console eurip:sso:test-connection     # OIDC-Provider-Verbindung testen
+bin/console eurip:sso:device-login        # CLI-Login via Device Code Flow
+bin/console eurip:sso:client-credentials  # M2M-Token holen (Client Credentials)
+bin/console eurip:sso:introspect <token>  # Token validieren und inspizieren
+```
+
+## Device Code Flow (RFC 8628)
+
+Für CLI-Tools, Smart TVs oder IoT-Geräte ohne Browser:
+
+### CLI-Nutzung
+
+```bash
+# Interaktiver Login
+bin/console eurip:sso:device-login
+
+# Mit eigenen Scopes
+bin/console eurip:sso:device-login --scopes="openid,profile,roles"
+
+# Access Token für Pipe ausgeben
+ACCESS_TOKEN=$(bin/console eurip:sso:device-login --output-token)
+
+# Volle JSON-Response
+bin/console eurip:sso:device-login --output-json
+```
+
+### Programmatische Nutzung
+
+```php
+use Jostkleigrewe\Sso\Client\OidcClient;
+
+// 1. Device Code anfordern
+$deviceCode = $oidcClient->requestDeviceCode(['openid', 'profile']);
+
+// 2. Anweisungen anzeigen
+echo "Öffne: {$deviceCode->verificationUri}\n";
+echo "Code eingeben: {$deviceCode->getFormattedUserCode()}\n";
+
+// 3. Auf Token warten (blockierend)
+$tokenResponse = $oidcClient->awaitDeviceToken($deviceCode);
+```
+
+## Client Credentials Flow (M2M)
+
+Für Server-zu-Server-Authentifizierung ohne Benutzerinteraktion:
+
+```bash
+# Access Token holen
+bin/console eurip:sso:client-credentials
+
+# Mit bestimmten Scopes
+bin/console eurip:sso:client-credentials --scopes="api:read,api:write"
+
+# Nur Token ausgeben (für Skripte)
+TOKEN=$(bin/console eurip:sso:client-credentials --output-token)
+```
+
+```php
+// Programmatische Nutzung
+$tokenResponse = $oidcClient->requestClientCredentials(['api:read']);
+$accessToken = $tokenResponse->accessToken;
+```
+
+## Token Introspection (RFC 7662)
+
+Tokens validieren und inspizieren:
+
+```bash
+bin/console eurip:sso:introspect "eyJhbG..."
+bin/console eurip:sso:introspect "eyJhbG..." --output-json
+```
+
+```php
+// Programmatische Nutzung
+$introspection = $oidcClient->introspectToken($accessToken);
+
+if ($introspection->active) {
+    echo "Token gültig bis: " . $introspection->exp;
+    echo "Subject: " . $introspection->sub;
+}
+```
 
 ## Events
 
-| Event | Wann | Zweck |
-|-------|------|-------|
-| `OidcPreLoginEvent` | Vor IdP-Redirect | Scopes ändern, abbrechen |
-| `OidcLoginSuccessEvent` | Nach Login | Rollen ändern, Redirect |
-| `OidcLoginFailureEvent` | Bei Fehler | Custom Error Response |
-| `OidcUserCreatedEvent` | Neuer User | Vor Persist ändern |
-| `OidcUserUpdatedEvent` | User aktualisiert | Vor Flush ändern |
-| `OidcPreLogoutEvent` | Vor Logout | SSO-Logout überspringen |
+Den Authentifizierungs-Flow mit Events anpassen:
 
-### Beispiel: Rolle basierend auf Claims hinzufügen
+| Event | Wann |
+|-------|------|
+| `OidcPreLoginEvent` | Vor Weiterleitung zum IdP |
+| `OidcLoginSuccessEvent` | Nach erfolgreichem Login |
+| `OidcLoginFailureEvent` | Nach fehlgeschlagenem Login |
+| `OidcPreLogoutEvent` | Vor Logout |
+| `OidcUserCreatedEvent` | Neuer User provisioniert |
+| `OidcUserUpdatedEvent` | Bestehender User aktualisiert |
+| `OidcTokenRefreshedEvent` | Token erneuert |
+| `OidcBackchannelLogoutEvent` | Back-Channel Logout empfangen |
+| `OidcFrontchannelLogoutEvent` | Front-Channel Logout empfangen |
 
 ```php
-#[AsEventListener(event: OidcLoginSuccessEvent::NAME)]
-class AddAdminRoleListener
+use Jostkleigrewe\Sso\Bundle\Event\OidcLoginSuccessEvent;
+
+#[AsEventListener]
+public function onLoginSuccess(OidcLoginSuccessEvent $event): void
 {
-    public function __invoke(OidcLoginSuccessEvent $event): void
-    {
-        if (in_array('admin', $event->claims['groups'] ?? [])) {
-            $event->addRole('ROLE_ADMIN');
-        }
-    }
+    $user = $event->user;
+    $claims = $event->claims;
+
+    // Eigene Logik nach Login
 }
 ```
 
-### Beispiel: Willkommens-Mail bei neuen Usern
-
-```php
-#[AsEventListener(event: OidcUserCreatedEvent::NAME)]
-class WelcomeEmailListener
-{
-    public function __invoke(OidcUserCreatedEvent $event): void
-    {
-        $email = $event->claims['email'] ?? null;
-        if ($email) {
-            // Willkommens-Mail senden
-        }
-    }
-}
-```
-
-## Konfigurationsreferenz
+## Docker/Kubernetes
 
 ```yaml
 eurip_sso:
-    # Erforderlich
-    issuer: '%env(SSO_ISSUER_URL)%'
-    client_id: '%env(OIDC_CLIENT_ID)%'
-    redirect_uri: '%env(APP_URL)%/auth/callback'
-
-    # Optional
-    client_secret: null
-    public_issuer: null              # Für Docker/K8s
-    scopes: [openid, profile, email]
-
-    cache:
-        enabled: true
-        ttl: 3600
-        pool: cache.app
-
-    controller:
-        enabled: false
-
-    routes:
-        login: /auth/login
-        callback: /auth/callback
-        logout: /auth/logout
-        after_login: /
-        after_logout: /
-        profile: null
-        debug: null
-        test: null
-
-    user_provider:
-        enabled: false
-        entity: null
-        mapping:
-            subject: oidcSubject
-            issuer: oidcIssuer
-            email: email
-            roles: roles
-            external_roles: externalRoles
-        claims_sync: {}
-        roles_claim: roles
-        default_roles: [ROLE_USER]
-        sync_on_login: true
-        auto_create: true
+    issuer: 'http://sso-container:8080'        # Interne URL
+    public_issuer: 'https://sso.example.com'   # Öffentliche URL
+    require_https: false                        # Nur für lokale Entwicklung!
 ```
 
-## Docker/Kubernetes (Dual-URL)
+## Dokumentation
 
-```yaml
-eurip_sso:
-    # Interne URL für Token-Exchange (Server-zu-Server)
-    issuer: 'http://sso-container:8080'
-
-    # Öffentliche URL für Browser-Redirects
-    public_issuer: 'https://sso.example.com'
-```
-
-## Migration von eigener Implementierung
-
-### Vorher (~600 Zeilen Code)
-
-```
-src/
-├── Controller/AuthController.php
-├── Security/
-│   ├── AppUserProvider.php
-│   ├── JwtValidator.php
-│   └── LoginStateStorage.php
-└── OAuth/
-    ├── OidcTokenClient.php
-    └── OidcDiscoveryClient.php
-```
-
-### Nachher (~30 Zeilen Config)
-
-```
-config/packages/eurip_sso.yaml
-```
-
-### Migrations-Schritte
-
-1. Bundle konfigurieren mit `controller.enabled: true` und `user_provider.enabled: true`
-2. Security.yaml: Provider auf `DoctrineOidcUserProvider` ändern
-3. Alte Dateien entfernen
-4. Event Listener für Custom-Logik hinzufügen (optional)
-
-## Standalone Usage (ohne Bundle)
-
-```php
-$client = OidcClient::fromDiscovery(
-    issuer: 'https://sso.example.com',
-    clientId: 'my-app',
-    redirectUri: 'https://app.com/callback',
-    httpClient: $psrClient,
-    requestFactory: $requestFactory,
-    streamFactory: $streamFactory,
-);
-
-$authData = $client->buildAuthorizationUrl(['openid', 'profile']);
-// Redirect zu $authData['url']
-
-// Callback
-$tokens = $client->exchangeCode($code, $authData['code_verifier']);
-$claims = $client->decodeIdToken($tokens->idToken);
-$client->validateClaims($claims, $authData['nonce']);
-```
+| Dokument | Beschreibung |
+|----------|--------------|
+| [Installationsanleitung](docs/INSTALL.de.md) | Detaillierte Setup-Anleitung |
+| [Konfiguration](docs/CONFIGURATION.md) | Vollständige Konfigurationsreferenz |
+| [Services](docs/SERVICES.md) | Autorisierung & Claims-Services |
+| [Events](docs/EVENTS.md) | Authentifizierungs-Flow anpassen |
+| [Flow-Diagramme](docs/FLOW-DIAGRAMS.de.md) | Visuelle Sequenzdiagramme für alle Flows |
+| [Device Code Flow](docs/DEVICE-CODE-FLOW.de.md) | RFC 8628 für CLI, Smart TV, IoT |
+| [M2M-Authentifizierung](docs/M2M-AUTHENTICATION.de.md) | Client Credentials & Token Introspection |
+| [Session Management](docs/SESSION-MANAGEMENT.de.md) | SSO-Session-Änderungen erkennen |
+| [Standalone](docs/STANDALONE.md) | Nutzung ohne Symfony Bundle |
+| [Sicherheit](docs/SECURITY.md) | HTTPS, JWT-Prüfung, PKCE |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | Häufige Probleme und Lösungen |
+| [Upgrade Guide](UPGRADE.md) | Breaking Changes zwischen Versionen |
 
 ## Lizenz
 

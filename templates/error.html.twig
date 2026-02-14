@@ -1,0 +1,51 @@
+{% extends '@EuripSso/layout.html.twig' %}
+
+{% block title %}Anmeldung fehlgeschlagen{% endblock %}
+
+{% block content %}
+    <div class="card">
+        <div class="card-header">
+            <h1 class="card-title">Anmeldung fehlgeschlagen</h1>
+            <p class="card-subtitle">Es gab ein Problem bei der Anmeldung.</p>
+        </div>
+
+        <div style="padding: 24px 0;">
+            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+                <p style="margin: 0; color: #856404;">
+                    <strong>Die Anmeldung konnte nicht abgeschlossen werden.</strong><br>
+                    Bitte versuchen Sie es erneut. Falls das Problem weiterhin besteht,
+                    wenden Sie sich an den Support.
+                </p>
+            </div>
+
+            {% if is_debug %}
+                <div class="card" style="background: #f8f9fa; margin-bottom: 24px;">
+                    <h2 style="font-size: 0.875rem; color: #666; margin-bottom: 12px;">Debug-Informationen</h2>
+                    <div class="info-grid">
+                        <span class="info-label">Fehlercode:</span>
+                        <span class="info-value"><code class="code">{{ error_code }}</code></span>
+
+                        <span class="info-label">Meldung:</span>
+                        <span class="info-value">{{ error_message }}</span>
+
+                        <span class="info-label">Zeitpunkt:</span>
+                        <span class="info-value">{{ error_timestamp|date('Y-m-d H:i:s') }}</span>
+                    </div>
+                </div>
+            {% else %}
+                <p style="font-size: 0.875rem; color: #666;">
+                    Fehlercode: <code class="code">{{ error_code }}</code>
+                </p>
+            {% endif %}
+        </div>
+
+        <div class="actions">
+            <a href="{{ login_url }}" class="btn btn-primary">
+                Erneut anmelden
+            </a>
+            <a href="{{ home_url }}" class="btn btn-outline">
+                Zur Startseite
+            </a>
+        </div>
+    </div>
+{% endblock %}

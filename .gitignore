@@ -30,3 +30,9 @@ composer.lock
 # OS
 .DS_Store
 Thumbs.db
+
+# Roadmap & Plans (project-specific, not versioned)
+ROADMAP.md
+ROADMAP-ARCHIV.md
+PLAN.md
+_parked_plans/

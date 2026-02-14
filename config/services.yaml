@@ -3,16 +3,16 @@ services:
         autowire: true
         autoconfigure: true
 
-    # Security Authenticator
-    Jostkleigrewe\Sso\Bundle\Security\OidcAuthenticator:
-        arguments:
-            $callbackRoute: '%eurip_sso.authenticator.callback_route%'
-            $defaultTargetPath: '%eurip_sso.authenticator.default_target_path%'
-            $loginPath: '%eurip_sso.authenticator.login_path%'
-
-    # Console Commands
-    Jostkleigrewe\Sso\Bundle\Command\OidcCacheWarmupCommand:
-        arguments:
-            $cacheTtl: '%eurip_sso.cache.ttl%'
-        tags:
-            - { name: console.command }
+    # DE: Alle Bundle-Services auto-registrieren (skalare Params via #[Autowire])
+    # EN: Auto-register all bundle services (scalar params via #[Autowire])
+    Jostkleigrewe\Sso\Bundle\:
+        resource: '../src/Bundle/'
+        exclude:
+            - '../src/Bundle/EuripSsoBundle.php'
+            - '../src/Bundle/OidcConstants.php'
+            - '../src/Bundle/Factory/'
+            - '../src/Bundle/Event/'
+            - '../src/Bundle/Security/OidcUser.php'
+            - '../src/Bundle/Security/OidcUserProviderInterface.php'
+            - '../src/Bundle/Security/DoctrineOidcUserProvider.php'
+            - '../src/Bundle/Security/OidcAuthenticator.php'

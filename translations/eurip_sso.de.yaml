@@ -1,0 +1,53 @@
+# EuripSsoBundle - German translations
+# Translation domain: eurip_sso
+
+eurip_sso:
+    error:
+        # OAuth 2.0 Authorization Errors (RFC 6749 §4.1.2.1)
+        access_denied: "Zugriff verweigert. Bitte versuchen Sie es erneut oder kontaktieren Sie den Support."
+        invalid_request: "Die Anmeldeanfrage war ungültig. Bitte versuchen Sie es erneut."
+        unauthorized_client: "Diese Anwendung ist nicht berechtigt, diese Aktion durchzuführen."
+        unsupported_response_type: "Die Anmeldemethode wird nicht unterstützt. Bitte kontaktieren Sie den Support."
+        invalid_scope: "Die angeforderten Berechtigungen sind nicht verfügbar."
+        server_error: "Der Authentifizierungsserver ist auf einen Fehler gestoßen. Bitte versuchen Sie es später erneut."
+        temporarily_unavailable: "Der Authentifizierungsdienst ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut."
+
+        # OAuth 2.0 Token Errors (RFC 6749 §5.2)
+        invalid_client: "Anwendungsauthentifizierung fehlgeschlagen. Bitte kontaktieren Sie den Support."
+        invalid_grant: "Die Anmeldesitzung ist abgelaufen. Bitte versuchen Sie es erneut."
+        unsupported_grant_type: "Die Authentifizierungsmethode wird nicht unterstützt."
+
+        # OpenID Connect Core 1.0 Errors (§3.1.2.6)
+        interaction_required: "Weitere Interaktion erforderlich. Bitte versuchen Sie es erneut."
+        login_required: "Bitte melden Sie sich an, um fortzufahren."
+        consent_required: "Ihre Zustimmung ist erforderlich, um fortzufahren."
+        request_not_supported: "Das Format der Anmeldeanfrage wird nicht unterstützt."
+        request_uri_not_supported: "Die Anmeldeanfragemethode wird nicht unterstützt."
+        registration_not_supported: "Dynamische Registrierung wird nicht unterstützt."
+
+        # Internal Errors
+        claims_invalid: "Anmeldeverifizierung fehlgeschlagen. Bitte versuchen Sie es erneut."
+        protocol_error: "Ein Anmeldefehler ist aufgetreten. Bitte versuchen Sie es erneut."
+        expired_token: "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an."
+        internal_error: "Ein unerwarteter Fehler ist aufgetreten. Bitte versuchen Sie es später erneut."
+
+        # Fallback for unknown errors
+        unknown: "Anmeldung fehlgeschlagen. Bitte versuchen Sie es erneut."
+
+    # Flash messages
+    flash:
+        logout_success: "Erfolgreich abgemeldet."
+        welcome: "Willkommen, %name%!"
+
+    # Logout confirmation page
+    logout:
+        confirm_subtitle: "Möchten Sie sich wirklich abmelden?"
+        confirm_message: "Sie sind derzeit angemeldet als:"
+        button: "Ja, abmelden"
+        cancel: "Abbrechen"
+
+    # UI Labels (optional, for templates)
+    ui:
+        login: "Anmelden"
+        logout: "Abmelden"
+        login_with_sso: "Mit SSO anmelden"

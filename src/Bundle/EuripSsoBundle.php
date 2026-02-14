@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle;
 
-use Jostkleigrewe\Sso\Bundle\Controller\AuthenticationController;
-use Jostkleigrewe\Sso\Bundle\Controller\DiagnosticsController;
-use Jostkleigrewe\Sso\Bundle\Controller\ProfileController;
+use Jostkleigrewe\Sso\Bundle\Command\OidcCacheClearCommand;
+use Jostkleigrewe\Sso\Bundle\Controller\BackchannelLogoutController;
+use Jostkleigrewe\Sso\Bundle\Controller\FrontchannelLogoutController;
 use Jostkleigrewe\Sso\Bundle\Factory\OidcClientFactory;
-use Jostkleigrewe\Sso\Bundle\Routing\OidcRouteLoader;
 use Jostkleigrewe\Sso\Bundle\Security\DoctrineOidcUserProvider;
-use Jostkleigrewe\Sso\Bundle\Security\OidcSessionStorage;
+use Jostkleigrewe\Sso\Bundle\Security\OidcAuthenticator;
 use Jostkleigrewe\Sso\Bundle\Security\OidcUserProviderInterface;
-use Jostkleigrewe\Sso\Bundle\Service\OidcAuthenticationService;
+use Jostkleigrewe\Sso\Bundle\Service\OidcCacheService;
+use Jostkleigrewe\Sso\Client\JwtVerifier;
 use Jostkleigrewe\Sso\Client\OidcClient;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
@@ -68,6 +68,12 @@ final class EuripSsoBundle extends AbstractBundle
                     ->defaultValue(['openid', 'profile', 'email'])
                 ->end()
 
+                // Security
+                ->booleanNode('require_https')
+                    ->defaultTrue()
+                    ->info('Require HTTPS for all OIDC endpoints (disable only for local development)')
+                ->end()
+
                 // Cache
                 ->arrayNode('cache')
                     ->addDefaultsIfNotSet()
@@ -78,25 +84,15 @@ final class EuripSsoBundle extends AbstractBundle
                     ->end()
                 ->end()
 
-                // Authenticator (legacy)
+                // Authenticator
                 ->arrayNode('authenticator')
                     ->addDefaultsIfNotSet()
                     ->children()
-                        ->scalarNode('callback_route')->defaultValue('/auth/callback')->end()
-                        ->scalarNode('default_target_path')->defaultValue('/')->end()
-                        ->scalarNode('login_path')->defaultValue('/login')->end()
-                        ->booleanNode('verify_signature')->defaultTrue()->end()
-                    ->end()
-                ->end()
-
-                // Controller
-                ->arrayNode('controller')
-                    ->addDefaultsIfNotSet()
-                    ->children()
                         ->booleanNode('enabled')
-                            ->defaultFalse()
-                            ->info('Enable bundle-provided auth controller')
+                            ->defaultTrue()
+                            ->info('Enable OidcAuthenticator for Symfony Security')
                         ->end()
+                        ->booleanNode('verify_signature')->defaultTrue()->end()
                     ->end()
                 ->end()
 
@@ -107,11 +103,29 @@ final class EuripSsoBundle extends AbstractBundle
                         ->scalarNode('login')->defaultValue('/auth/login')->end()
                         ->scalarNode('callback')->defaultValue('/auth/callback')->end()
                         ->scalarNode('logout')->defaultValue('/auth/logout')->end()
+                        ->scalarNode('logout_confirm')
+                            ->defaultValue('/auth/logout/confirm')
+                            ->info('GET endpoint for logout confirmation page')
+                        ->end()
                         ->scalarNode('after_login')->defaultValue('/')->end()
                         ->scalarNode('after_logout')->defaultValue('/')->end()
-                        ->scalarNode('profile')->defaultNull()->end()
-                        ->scalarNode('debug')->defaultNull()->end()
-                        ->scalarNode('test')->defaultNull()->end()
+                        ->scalarNode('profile')->defaultValue('/auth/profile')->end()
+                        ->scalarNode('debug')->defaultValue('/auth/debug')->end()
+                        ->scalarNode('test')->defaultValue('/auth/test')->end()
+                        ->scalarNode('error')
+                            ->defaultValue('/auth/error')
+                            ->info('Error page for authentication failures (prevents redirect loops)')
+                        ->end()
+                        // DE: OpenID Connect Logout Extensions
+                        // EN: OpenID Connect Logout Extensions
+                        ->scalarNode('backchannel_logout')
+                            ->defaultNull()
+                            ->info('Back-Channel Logout endpoint (POST)')
+                        ->end()
+                        ->scalarNode('frontchannel_logout')
+                            ->defaultNull()
+                            ->info('Front-Channel Logout endpoint (GET, iframe)')
+                        ->end()
                     ->end()
                 ->end()
 
@@ -158,7 +172,8 @@ final class EuripSsoBundle extends AbstractBundle
      */
     public function loadExtension(array $config, ContainerConfigurator $container, ContainerBuilder $builder): void
     {
-        // Set parameters
+        // DE: Container-Parameter setzen (für #[Autowire]-Attribute)
+        // EN: Set container parameters (for #[Autowire] attributes)
         $container->parameters()
             ->set('eurip_sso.issuer', $config['issuer'])
             ->set('eurip_sso.client_id', $config['client_id'])
@@ -166,37 +181,58 @@ final class EuripSsoBundle extends AbstractBundle
             ->set('eurip_sso.redirect_uri', $config['redirect_uri'])
             ->set('eurip_sso.public_issuer', $config['public_issuer'])
             ->set('eurip_sso.scopes', $config['scopes'])
+            ->set('eurip_sso.require_https', $config['require_https'])
             ->set('eurip_sso.cache.enabled', $config['cache']['enabled'])
             ->set('eurip_sso.cache.ttl', $config['cache']['ttl'])
             ->set('eurip_sso.cache.pool', $config['cache']['pool'])
-            ->set('eurip_sso.authenticator.callback_route', $config['authenticator']['callback_route'])
-            ->set('eurip_sso.authenticator.default_target_path', $config['authenticator']['default_target_path'])
-            ->set('eurip_sso.authenticator.login_path', $config['authenticator']['login_path'])
             ->set('eurip_sso.authenticator.verify_signature', $config['authenticator']['verify_signature'])
-            ->set('eurip_sso.controller.enabled', $config['controller']['enabled'])
             ->set('eurip_sso.routes.login', $config['routes']['login'])
             ->set('eurip_sso.routes.callback', $config['routes']['callback'])
             ->set('eurip_sso.routes.logout', $config['routes']['logout'])
+            ->set('eurip_sso.routes.logout_confirm', $config['routes']['logout_confirm'])
             ->set('eurip_sso.routes.after_login', $config['routes']['after_login'])
             ->set('eurip_sso.routes.after_logout', $config['routes']['after_logout'])
             ->set('eurip_sso.routes.profile', $config['routes']['profile'])
             ->set('eurip_sso.routes.debug', $config['routes']['debug'])
-            ->set('eurip_sso.routes.test', $config['routes']['test']);
+            ->set('eurip_sso.routes.test', $config['routes']['test'])
+            ->set('eurip_sso.routes.error', $config['routes']['error'])
+            ->set('eurip_sso.routes.backchannel_logout', $config['routes']['backchannel_logout'])
+            ->set('eurip_sso.routes.frontchannel_logout', $config['routes']['frontchannel_logout']);
 
-        // Load base services
+        // DE: Services via Resource-Scanning laden (#[Autowire] löst skalare Params auf)
+        // EN: Load services via resource scanning (#[Autowire] resolves scalar params)
         $container->import('../../config/services.yaml');
 
-        // Register OidcClient via static factory
+        // DE: OidcClient + JwtVerifier via Static Factory registrieren
+        // EN: Register OidcClient + JwtVerifier via static factory
         $this->registerOidcClient($config, $container, $builder);
 
-        // Register controller services
-        if ($config['controller']['enabled']) {
-            $this->registerControllerServices($config, $container, $builder);
+        // DE: OidcCacheService mit konfiguriertem Cache-Pool registrieren
+        // EN: Register OidcCacheService with configured cache pool
+        $this->registerCacheService($config, $container, $builder);
+
+        // DE: OidcAuthenticator bedingt registrieren
+        // EN: Conditionally register OidcAuthenticator
+        if ($config['authenticator']['enabled']) {
+            $container->services()
+                ->set(OidcAuthenticator::class)
+                ->autowire()
+                ->autoconfigure();
         }
 
-        // Register user provider
+        // DE: DoctrineOidcUserProvider bedingt registrieren (Doctrine-Abhängigkeit)
+        // EN: Conditionally register DoctrineOidcUserProvider (Doctrine dependency)
         if ($config['user_provider']['enabled']) {
             $this->registerUserProvider($config, $container, $builder);
+        }
+
+        // DE: Logout-Channel-Controller entfernen wenn Route nicht konfiguriert
+        // EN: Remove logout channel controllers when route not configured
+        if ($config['routes']['backchannel_logout'] === null) {
+            $builder->removeDefinition(BackchannelLogoutController::class);
+        }
+        if ($config['routes']['frontchannel_logout'] === null) {
+            $builder->removeDefinition(FrontchannelLogoutController::class);
         }
     }
 
@@ -208,9 +244,6 @@ final class EuripSsoBundle extends AbstractBundle
         ContainerConfigurator $container,
         ContainerBuilder $builder,
     ): void {
-        $services = $container->services();
-
-        // Build arguments for static factory
         $factoryArgs = [
             '$issuer' => $config['issuer'],
             '$clientId' => $config['client_id'],
@@ -220,93 +253,24 @@ final class EuripSsoBundle extends AbstractBundle
             '$streamFactory' => new Reference(StreamFactoryInterface::class),
             '$clientSecret' => $config['client_secret'],
             '$publicIssuer' => $config['public_issuer'],
+            '$cache' => $config['cache']['enabled']
+                ? new Reference($config['cache']['pool'])
+                : null,
             '$cacheTtl' => $config['cache']['ttl'],
             '$logger' => new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE),
+            '$requireHttps' => $config['require_https'],
         ];
 
-        // Add cache if enabled
-        if ($config['cache']['enabled']) {
-            $factoryArgs['$cache'] = new Reference($config['cache']['pool']);
-        } else {
-            $factoryArgs['$cache'] = null;
-        }
-
-        $services->set(OidcClient::class)
+        $container->services()
+            ->set(OidcClient::class)
             ->factory([OidcClientFactory::class, 'create'])
             ->args($factoryArgs);
-    }
 
-    /**
-     * @param array<string, mixed> $config
-     */
-    private function registerControllerServices(
-        array $config,
-        ContainerConfigurator $container,
-        ContainerBuilder $builder,
-    ): void {
-        $services = $container->services();
-
-        // Session Storage
-        $services->set(OidcSessionStorage::class)
-            ->arg('$requestStack', new Reference('request_stack'))
-            ->autowire();
-
-        // Authentication Service (shared business logic)
-        $services->set(OidcAuthenticationService::class)
-            ->arg('$oidcClient', new Reference(OidcClient::class))
-            ->arg('$userProvider', new Reference(OidcUserProviderInterface::class))
-            ->arg('$sessionStorage', new Reference(OidcSessionStorage::class))
-            ->arg('$eventDispatcher', new Reference('event_dispatcher'))
-            ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE));
-
-        // Route Loader
-        $services->set(OidcRouteLoader::class)
-            ->arg('$loginPath', $config['routes']['login'])
-            ->arg('$callbackPath', $config['routes']['callback'])
-            ->arg('$logoutPath', $config['routes']['logout'])
-            ->arg('$optionalRoutes', [
-                'profile' => $config['routes']['profile'],
-                'debug' => $config['routes']['debug'],
-                'test' => $config['routes']['test'],
-            ])
-            ->tag('routing.loader');
-
-        $services->alias('eurip_sso.route_loader', OidcRouteLoader::class);
-
-        // Authentication Controller (login, callback, logout)
-        $services->set(AuthenticationController::class)
-            ->arg('$authService', new Reference(OidcAuthenticationService::class))
-            ->arg('$tokenStorage', new Reference('security.token_storage'))
-            ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE))
-            ->arg('$defaultTargetPath', $config['routes']['after_login'])
-            ->arg('$afterLogoutPath', $config['routes']['after_logout'])
-            ->arg('$scopes', $config['scopes'])
-            ->arg('$firewallName', 'main')
-            ->autowire()
-            ->autoconfigure()
-            ->tag('controller.service_arguments')
-            ->public();
-
-        // Profile Controller (optional)
-        if ($config['routes']['profile'] !== null) {
-            $services->set(ProfileController::class)
-                ->arg('$loginPath', $config['routes']['login'])
-                ->autowire()
-                ->autoconfigure()
-                ->tag('controller.service_arguments')
-                ->public();
-        }
-
-        // Diagnostics Controller (debug, test - optional)
-        if ($config['routes']['debug'] !== null || $config['routes']['test'] !== null) {
-            $services->set(DiagnosticsController::class)
-                ->arg('$oidcClient', new Reference(OidcClient::class))
-                ->arg('$scopes', $config['scopes'])
-                ->autowire()
-                ->autoconfigure()
-                ->tag('controller.service_arguments')
-                ->public();
-        }
+        // DE: JwtVerifier als Service registrieren (gleiche Instanz wie im OidcClient)
+        // EN: Register JwtVerifier as service (same instance as in OidcClient)
+        $container->services()
+            ->set(JwtVerifier::class)
+            ->factory([new Reference(OidcClient::class), 'getJwtVerifier']);
     }
 
     /**
@@ -341,5 +305,34 @@ final class EuripSsoBundle extends AbstractBundle
             ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE));
 
         $services->alias(OidcUserProviderInterface::class, DoctrineOidcUserProvider::class);
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function registerCacheService(
+        array $config,
+        ContainerConfigurator $container,
+        ContainerBuilder $builder,
+    ): void {
+        $cacheRef = $config['cache']['enabled']
+            ? new Reference($config['cache']['pool'])
+            : null;
+
+        $container->services()
+            ->set(OidcCacheService::class)
+            ->autowire()
+            ->autoconfigure()
+            ->public()
+            ->arg('$cache', $cacheRef)
+            ->arg('$logger', new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE));
+
+        // DE: OidcCacheClearCommand explizit registrieren (hängt von OidcCacheService ab)
+        // EN: Explicitly register OidcCacheClearCommand (depends on OidcCacheService)
+        $container->services()
+            ->set(OidcCacheClearCommand::class)
+            ->autowire()
+            ->autoconfigure()
+            ->tag('console.command');
     }
 }

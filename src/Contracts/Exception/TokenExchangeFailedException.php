@@ -15,6 +15,6 @@ final class TokenExchangeFailedException extends \RuntimeException
         public readonly string $errorDescription,
         ?\Throwable $previous = null,
     ) {
-        parent::__construct("Token exchange failed: {$error} - {$errorDescription}", 0, $previous);
+        parent::__construct(sprintf('Token exchange failed: %s - %s', $error, $errorDescription), 0, $previous);
     }
 }

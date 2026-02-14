@@ -80,4 +80,133 @@
         {% endif %}
     </div>
 </div>
+
+{% if client_services is defined and client_services %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Client Services</h2>
+        <p class="card-subtitle">Token storage and claims information</p>
+    </div>
+
+    <h3>Token Status</h3>
+    <div class="info-grid" style="margin-bottom: 24px;">
+        <span class="info-label">ID Token</span>
+        <span class="info-value">
+            {% if client_services.tokens.has_id_token %}
+                <span class="badge badge-success">Present</span>
+            {% else %}
+                <span class="badge badge-warning">Missing</span>
+            {% endif %}
+        </span>
+
+        <span class="info-label">Access Token</span>
+        <span class="info-value">
+            {% if client_services.tokens.has_access_token %}
+                <span class="badge badge-success">Present</span>
+                {% if client_services.tokens.access_token_valid %}
+                    <span class="badge badge-info">Valid</span>
+                {% else %}
+                    <span class="badge badge-danger">Expired</span>
+                {% endif %}
+            {% else %}
+                <span class="badge badge-warning">Missing</span>
+            {% endif %}
+        </span>
+
+        <span class="info-label">Refresh Token</span>
+        <span class="info-value">
+            {% if client_services.tokens.has_refresh_token %}
+                <span class="badge badge-success">Present</span>
+            {% else %}
+                <span class="badge badge-secondary">Missing</span>
+            {% endif %}
+        </span>
+
+        {% if client_services.tokens.expires_at %}
+            <span class="info-label">Expires At</span>
+            <span class="info-value code">{{ client_services.tokens.expires_at }}</span>
+        {% endif %}
+    </div>
+
+    {% if client_services.claims %}
+    <h3>ID Token Claims</h3>
+    <div class="info-grid" style="margin-bottom: 24px;">
+        <span class="info-label">Subject</span>
+        <span class="info-value code">{{ client_services.claims.subject ?? 'n/a' }}</span>
+
+        <span class="info-label">Email</span>
+        <span class="info-value code">{{ client_services.claims.email ?? 'n/a' }}</span>
+
+        <span class="info-label">Name</span>
+        <span class="info-value code">{{ client_services.claims.name ?? 'n/a' }}</span>
+
+        <span class="info-label">Blocked</span>
+        <span class="info-value">
+            {% if client_services.claims.is_blocked %}
+                <span class="badge badge-danger">Yes</span>
+            {% else %}
+                <span class="badge badge-success">No</span>
+            {% endif %}
+        </span>
+
+        {% if client_services.claims.roles %}
+            <span class="info-label">Global Roles</span>
+            <span class="info-value">
+                {% for role in client_services.claims.roles %}
+                    <span class="badge badge-info">{{ role }}</span>
+                {% else %}
+                    <span class="badge badge-secondary">none</span>
+                {% endfor %}
+            </span>
+        {% endif %}
+
+        {% if client_services.claims.client_roles %}
+            <span class="info-label">Client Roles</span>
+            <span class="info-value">
+                {% for role in client_services.claims.client_roles %}
+                    <span class="badge badge-info">{{ role }}</span>
+                {% else %}
+                    <span class="badge badge-secondary">none</span>
+                {% endfor %}
+            </span>
+        {% endif %}
+
+        {% if client_services.claims.client_permissions %}
+            <span class="info-label">Permissions</span>
+            <span class="info-value">
+                {% for perm in client_services.claims.client_permissions %}
+                    <span class="badge badge-success">{{ perm }}</span>
+                {% else %}
+                    <span class="badge badge-secondary">none</span>
+                {% endfor %}
+            </span>
+        {% endif %}
+
+        {% if client_services.claims.client_groups %}
+            <span class="info-label">Groups</span>
+            <span class="info-value">
+                {% for group in client_services.claims.client_groups %}
+                    <span class="badge badge-secondary">{{ group }}</span>
+                {% else %}
+                    <span class="badge badge-secondary">none</span>
+                {% endfor %}
+            </span>
+        {% endif %}
+
+        {% if client_services.claims.issued_at %}
+            <span class="info-label">Token Issued</span>
+            <span class="info-value code">{{ client_services.claims.issued_at }}</span>
+        {% endif %}
+
+        {% if client_services.claims.expires_at %}
+            <span class="info-label">Token Expires</span>
+            <span class="info-value code">{{ client_services.claims.expires_at }}</span>
+        {% endif %}
+    </div>
+
+    <h3>All Claims (Raw)</h3>
+    <pre class="code-block">{{ client_services.claims.all_claims|json_encode(constant('JSON_PRETTY_PRINT') b-or constant('JSON_UNESCAPED_SLASHES')) }}</pre>
+    {% endif %}
+</div>
+{% endif %}
 {% endblock %}

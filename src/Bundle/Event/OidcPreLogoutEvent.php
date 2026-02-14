@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Event;
 
-use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -18,8 +17,6 @@ use Symfony\Contracts\EventDispatcher\Event;
  */
 final class OidcPreLogoutEvent extends Event
 {
-    public const NAME = OidcConstants::EVENT_PRE_LOGOUT;
-
     private ?Response $response = null;
     private bool $skipSsoLogout = false;
 

@@ -33,6 +33,7 @@ final class OidcAuthenticationService
         private readonly OidcUserProviderInterface $userProvider,
         private readonly OidcSessionStorage $sessionStorage,
         private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly ?OidcCacheService $cacheService = null,
         private readonly ?LoggerInterface $logger = null,
     ) {
     }
@@ -48,7 +49,7 @@ final class OidcAuthenticationService
     {
         // Dispatch pre-login event
         $preLoginEvent = new OidcPreLoginEvent($request, $scopes);
-        $this->eventDispatcher->dispatch($preLoginEvent, OidcConstants::EVENT_PRE_LOGIN);
+        $this->eventDispatcher->dispatch($preLoginEvent);
 
         if ($preLoginEvent->hasResponse()) {
             return null; // Event handler wants to handle response
@@ -85,15 +86,45 @@ final class OidcAuthenticationService
      */
     public function handleCallback(string $code, string $state): array
     {
+        $this->logger?->debug('OIDC handleCallback: Starting', [
+            'state_prefix' => substr($state, 0, 8) . '...',
+            'code_prefix' => substr($code, 0, 8) . '...',
+            'session_debug' => $this->sessionStorage->getDebugInfo(),
+        ]);
+
         // Validate state and get stored data
         $storedData = $this->sessionStorage->validateAndClear($state);
         if ($storedData === null) {
-            $this->logger?->warning('OIDC state validation failed');
+            $this->logger?->warning('OIDC state validation failed', [
+                'received_state_prefix' => substr($state, 0, 8) . '...',
+                'session_debug' => $this->sessionStorage->getDebugInfo(),
+            ]);
             throw new OidcProtocolException('Invalid session state');
         }
 
+        $this->logger?->debug('OIDC handleCallback: State validated, exchanging code');
+
+        // DE: State wurde bereits in validateAndClear() als "used" markiert
+        //     um Race Conditions zu verhindern (kein Retry bei parallelen Requests)
+        // EN: State was already marked as "used" in validateAndClear()
+        //     to prevent race conditions (no retry with parallel requests)
+
         // Exchange code for tokens
-        $tokenResponse = $this->oidcClient->exchangeCode($code, $storedData['verifier']);
+        try {
+            $tokenResponse = $this->oidcClient->exchangeCode($code, $storedData['verifier']);
+        } catch (TokenExchangeFailedException $e) {
+            // DE: Bei invalid_client den Cache clearen, damit der nächste Login funktioniert.
+            //     Ein automatischer Retry ist nicht möglich, da der State bereits verbraucht wurde.
+            // EN: On invalid_client clear cache so next login works.
+            //     Automatic retry not possible since state was already consumed.
+            if ($e->error === 'invalid_client' && $this->cacheService !== null) {
+                $this->logger?->warning('OIDC token exchange failed with invalid_client, clearing cache', [
+                    'error_description' => $e->errorDescription,
+                ]);
+                $this->cacheService->clearAll();
+            }
+            throw $e;
+        }
 
         // Decode and validate ID token
         $claims = [];
@@ -109,7 +140,7 @@ final class OidcAuthenticationService
 
         // Dispatch success event
         $successEvent = new OidcLoginSuccessEvent($user, $tokenResponse, $claims);
-        $this->eventDispatcher->dispatch($successEvent, OidcConstants::EVENT_LOGIN_SUCCESS);
+        $this->eventDispatcher->dispatch($successEvent);
 
         // Clear auth state after successful login (prevents replay)
         $this->sessionStorage->markSuccessAndClear();
@@ -139,7 +170,7 @@ final class OidcAuthenticationService
     ): ?string {
         // Dispatch pre-logout event
         $preLogoutEvent = new OidcPreLogoutEvent($request, $user, $idToken);
-        $this->eventDispatcher->dispatch($preLogoutEvent, OidcConstants::EVENT_PRE_LOGOUT);
+        $this->eventDispatcher->dispatch($preLogoutEvent);
 
         if ($preLogoutEvent->hasResponse() || $preLogoutEvent->shouldSkipSsoLogout()) {
             return null;
@@ -171,7 +202,7 @@ final class OidcAuthenticationService
         ]);
 
         $event = new OidcLoginFailureEvent($error, $description, $exception);
-        $this->eventDispatcher->dispatch($event, OidcConstants::EVENT_LOGIN_FAILURE);
+        $this->eventDispatcher->dispatch($event);
 
         return $event;
     }
@@ -194,7 +225,7 @@ final class OidcAuthenticationService
     public function getPreLoginEvent(Request $request, array $scopes): OidcPreLoginEvent
     {
         $event = new OidcPreLoginEvent($request, $scopes);
-        $this->eventDispatcher->dispatch($event, OidcConstants::EVENT_PRE_LOGIN);
+        $this->eventDispatcher->dispatch($event);
         return $event;
     }
 }

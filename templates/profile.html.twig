@@ -3,6 +3,7 @@
 {% block title %}User Profile - EURIP SSO{% endblock %}
 
 {% block content %}
+{# DE: Basis-Informationen // EN: Basic information #}
 <div class="card">
     <div class="card-header">
         <h1 class="card-title">User Profile</h1>
@@ -12,13 +13,6 @@
     <div class="info-grid">
         <span class="info-label">User Identifier</span>
         <span class="info-value code">{{ user.userIdentifier }}</span>
-
-        <span class="info-label">Roles</span>
-        <span class="info-value">
-            {% for role in user.roles %}
-                <span class="badge badge-info">{{ role }}</span>
-            {% endfor %}
-        </span>
 
         {% if user.email is defined and user.email %}
             <span class="info-label">Email</span>
@@ -42,15 +36,234 @@
     </div>
 
     <div class="actions">
-        <a href="{{ path('eurip_sso_logout') }}" class="btn btn-danger">Logout</a>
+        <twig:EuripSso:Logout label="Logout" class="btn btn-danger" />
         <a href="{{ path('eurip_sso_test') }}" class="btn btn-outline">Back to Test</a>
     </div>
 </div>
 
+{# DE: Token-Status (wenn Client-Services verfügbar) // EN: Token status (if client services available) #}
+{% if token_expires_at is defined %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Token Status</h2>
+    </div>
+
+    <div class="info-grid">
+        <span class="info-label">Status</span>
+        <span class="info-value">
+            {% if token_is_valid %}
+                <span class="badge badge-success">Valid</span>
+            {% else %}
+                <span class="badge badge-warning">Expired</span>
+            {% endif %}
+            {% if token_expires_soon is defined and token_expires_soon %}
+                <span class="badge badge-warning">Expires Soon</span>
+            {% endif %}
+        </span>
+
+        {% if token_expires_at %}
+            <span class="info-label">Expires At</span>
+            <span class="info-value">{{ token_expires_at|date('Y-m-d H:i:s') }}</span>
+
+            {% if token_remaining_seconds is defined %}
+                <span class="info-label">Remaining</span>
+                <span class="info-value">
+                    {% if token_remaining_seconds > 3600 %}
+                        {{ (token_remaining_seconds / 3600)|round(1) }} hours
+                    {% elseif token_remaining_seconds > 60 %}
+                        {{ (token_remaining_seconds / 60)|round }} minutes
+                    {% else %}
+                        {{ token_remaining_seconds }} seconds
+                    {% endif %}
+                </span>
+            {% endif %}
+        {% endif %}
+
+        <span class="info-label">Refresh Token</span>
+        <span class="info-value">
+            {% if has_refresh_token %}
+                <span class="badge badge-success">Available</span>
+            {% else %}
+                <span class="badge badge-secondary">Not Available</span>
+            {% endif %}
+        </span>
+    </div>
+</div>
+{% endif %}
+
+{# DE: Rollen (wenn Client-Services verfügbar) // EN: Roles (if client services available) #}
+{% if has_extended_info is defined and has_extended_info %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Roles &amp; Permissions</h2>
+    </div>
+
+    {# DE: Blockiert-Status // EN: Blocked status #}
+    {% if is_blocked is defined and is_blocked %}
+        <div class="flash flash-error" style="margin-bottom: 16px;">
+            User is blocked
+        </div>
+    {% endif %}
+
+    <div class="info-grid">
+        {# DE: Globale Rollen // EN: Global roles #}
+        <span class="info-label">Global Roles</span>
+        <span class="info-value">
+            {% if global_roles is defined and global_roles|length > 0 %}
+                {% for role in global_roles %}
+                    <span class="badge badge-info">{{ role }}</span>
+                {% endfor %}
+            {% else %}
+                <span class="text-muted">None</span>
+            {% endif %}
+        </span>
+
+        {# DE: Client-spezifische Rollen // EN: Client-specific roles #}
+        <span class="info-label">Client Roles</span>
+        <span class="info-value">
+            {% if client_roles is defined and client_roles|length > 0 %}
+                {% for role in client_roles %}
+                    <span class="badge badge-info">{{ role }}</span>
+                {% endfor %}
+            {% else %}
+                <span class="text-muted">None</span>
+            {% endif %}
+        </span>
+
+        {# DE: Symfony-Rollen vom User-Objekt // EN: Symfony roles from user object #}
+        <span class="info-label">Symfony Roles</span>
+        <span class="info-value">
+            {% for role in user.roles %}
+                <span class="badge badge-secondary">{{ role }}</span>
+            {% endfor %}
+        </span>
+
+        {# DE: Permissions // EN: Permissions #}
+        <span class="info-label">Permissions</span>
+        <span class="info-value">
+            {% if permissions is defined and permissions|length > 0 %}
+                {% for permission in permissions %}
+                    <span class="badge badge-success">{{ permission }}</span>
+                {% endfor %}
+            {% else %}
+                <span class="text-muted">None</span>
+            {% endif %}
+        </span>
+
+        {# DE: Gruppen // EN: Groups #}
+        <span class="info-label">Groups</span>
+        <span class="info-value">
+            {% if groups is defined and groups|length > 0 %}
+                {% for group in groups %}
+                    <span class="badge badge-warning">{{ group }}</span>
+                {% endfor %}
+            {% else %}
+                <span class="text-muted">None</span>
+            {% endif %}
+        </span>
+    </div>
+</div>
+{% else %}
+{# DE: Fallback wenn keine Client-Services // EN: Fallback if no client services #}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Roles</h2>
+    </div>
+    <div class="info-grid">
+        <span class="info-label">Roles</span>
+        <span class="info-value">
+            {% for role in user.roles %}
+                <span class="badge badge-info">{{ role }}</span>
+            {% endfor %}
+        </span>
+    </div>
+</div>
+{% endif %}
+
+{# DE: Alle Claims (wenn Client-Services verfügbar) // EN: All claims (if client services available) #}
+{% if claims is defined and claims|length > 0 %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">All Claims</h2>
+        <p class="card-subtitle">Raw claims from ID token</p>
+    </div>
+
+    <table class="claims-table">
+        <thead>
+            <tr>
+                <th>Claim</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key, value in claims %}
+                <tr>
+                    <td class="claim-key">{{ key }}</td>
+                    <td class="claim-value">
+                        {% if value is iterable %}
+                            <pre class="code">{{ value|json_encode(constant('JSON_PRETTY_PRINT')) }}</pre>
+                        {% elseif value is same as(true) %}
+                            <span class="badge badge-success">true</span>
+                        {% elseif value is same as(false) %}
+                            <span class="badge badge-secondary">false</span>
+                        {% elseif value is null %}
+                            <span class="text-muted">null</span>
+                        {% elseif key in ['exp', 'iat', 'auth_time', 'updated_at'] and (value matches '/^\\d+$/') %}
+                            {{ value|date('Y-m-d H:i:s') }}
+                            <span class="text-muted">({{ value }})</span>
+                        {% else %}
+                            {{ value }}
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{# DE: Debug-Ansicht des User-Objekts // EN: Debug view of user object #}
 <div class="card">
     <div class="card-header">
         <h2 class="card-title">User Object (Debug)</h2>
     </div>
     <pre class="code-block">{{ user|json_encode(constant('JSON_PRETTY_PRINT')) }}</pre>
 </div>
+
+<style>
+    .claims-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+    .claims-table th,
+    .claims-table td {
+        padding: 8px 12px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+    }
+    .claims-table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: #666;
+    }
+    .claims-table .claim-key {
+        font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        font-weight: 500;
+        color: #0066cc;
+        width: 200px;
+    }
+    .claims-table .claim-value {
+        word-break: break-all;
+    }
+    .claims-table pre.code {
+        margin: 0;
+        white-space: pre-wrap;
+        font-size: 0.8rem;
+    }
+    .text-muted {
+        color: #999;
+        font-style: italic;
+    }
+</style>
 {% endblock %}

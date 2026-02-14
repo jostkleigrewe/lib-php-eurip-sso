@@ -25,9 +25,11 @@ final class OidcSessionStorage
 
     /**
      * DE: Retry-Window in Sekunden (für Browser-Refresh, Netzwerk-Retry).
+     *     5 Minuten erlauben genug Zeit für Consent-Entscheidungen.
      * EN: Retry window in seconds (for browser refresh, network retry).
+     *     5 minutes allows enough time for consent decisions.
      */
-    private const RETRY_WINDOW_SECONDS = 60;
+    private const RETRY_WINDOW_SECONDS = 300;
 
     public function __construct(
         private readonly RequestStack $requestStack,
@@ -51,9 +53,9 @@ final class OidcSessionStorage
 
     /**
      * DE: Validiert State und gibt gespeicherte Daten zurück.
-     *     Unterstützt einmaliges Retry innerhalb des Retry-Windows.
+     *     Markiert State SOFORT als verwendet um Race Conditions zu verhindern.
      * EN: Validates state and returns stored data if valid.
-     *     Supports single retry within the retry window.
+     *     Marks state as used IMMEDIATELY to prevent race conditions.
      *
      * @return array{nonce: string, verifier: string}|null
      */
@@ -62,7 +64,9 @@ final class OidcSessionStorage
         $session = $this->requestStack->getSession();
 
         $storedState = $session->get(self::KEY_STATE);
-        if ($storedState === null || !hash_equals($storedState, $state)) {
+        // DE: Type-Check für Session-Wert (könnte manipuliert sein)
+        // EN: Type check for session value (could be manipulated)
+        if (!is_string($storedState) || !hash_equals($storedState, $state)) {
             return null;
         }
 
@@ -85,13 +89,27 @@ final class OidcSessionStorage
             return null;
         }
 
-        // Mark as used (but don't clear yet - allows debugging)
+        // DE: SOFORT als "used" markieren um Race Conditions zu verhindern.
+        //     Bei parallelen Requests kann nur einer erfolgreich validieren.
+        // EN: Mark as "used" IMMEDIATELY to prevent race conditions.
+        //     With parallel requests, only one can successfully validate.
         $session->set(self::KEY_USED, true);
 
         return [
             'nonce' => $nonce,
             'verifier' => $verifier,
         ];
+    }
+
+    /**
+     * DE: Markiert den State als verwendet (nach erfolgreichem Token-Exchange).
+     *     Verhindert Replay-Attacken, erlaubt aber Retry bei Fehlern.
+     * EN: Marks state as used (after successful token exchange).
+     *     Prevents replay attacks but allows retry on failure.
+     */
+    public function markUsed(): void
+    {
+        $this->requestStack->getSession()->set(self::KEY_USED, true);
     }
 
     /**
@@ -116,6 +134,69 @@ final class OidcSessionStorage
     public function hasState(): bool
     {
         return $this->requestStack->getSession()->has(self::KEY_STATE);
+    }
+
+    /**
+     * DE: Gibt gespeicherten State zurück, falls gültig und nicht abgelaufen.
+     *     Für Wiederverwendung bei Doppelklick/Race Conditions.
+     * EN: Returns stored state if valid and not expired.
+     *     For reuse on double-click/race conditions.
+     *
+     * @return array{state: string, nonce: string, verifier: string}|null
+     */
+    public function getValidState(): ?array
+    {
+        $session = $this->requestStack->getSession();
+
+        $state = $session->get(self::KEY_STATE);
+        $nonce = $session->get(self::KEY_NONCE);
+        $verifier = $session->get(self::KEY_VERIFIER);
+        $expires = $session->get(self::KEY_EXPIRES);
+
+        // DE: Alle Werte müssen vorhanden sein // EN: All values must be present
+        if ($state === null || $nonce === null || $verifier === null) {
+            return null;
+        }
+
+        // DE: Bereits verwendet = nicht wiederverwendbar // EN: Already used = not reusable
+        if ($session->get(self::KEY_USED) === true) {
+            return null;
+        }
+
+        // DE: Abgelaufen = nicht wiederverwendbar // EN: Expired = not reusable
+        if ($expires !== null && time() > $expires) {
+            return null;
+        }
+
+        return [
+            'state' => $state,
+            'nonce' => $nonce,
+            'verifier' => $verifier,
+        ];
+    }
+
+    /**
+     * DE: Debug-Info für Logging.
+     * EN: Debug info for logging.
+     *
+     * @return array<string, mixed>
+     */
+    public function getDebugInfo(): array
+    {
+        $session = $this->requestStack->getSession();
+
+        $state = $session->get(self::KEY_STATE);
+        $expires = $session->get(self::KEY_EXPIRES);
+        $used = $session->get(self::KEY_USED);
+
+        // DE: Session-ID NICHT loggen (Security-Risiko bei Log-Leak)
+        // EN: Do NOT log session ID (security risk if logs are leaked)
+        return [
+            'has_state' => $state !== null,
+            'state_prefix' => $state !== null ? substr($state, 0, 8) . '...' : null,
+            'expires_in' => $expires !== null ? max(0, $expires - time()) : null,
+            'is_used' => $used === true,
+        ];
     }
 
     /**

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Jostkleigrewe\Sso\Bundle\Event;
 
-use Jostkleigrewe\Sso\Bundle\OidcConstants;
 use Jostkleigrewe\Sso\Contracts\DTO\TokenResponse;
 use Symfony\Contracts\EventDispatcher\Event;
 
@@ -16,8 +15,6 @@ use Symfony\Contracts\EventDispatcher\Event;
  */
 final class OidcUserUpdatedEvent extends Event
 {
-    public const NAME = OidcConstants::EVENT_USER_UPDATED;
-
     /**
      * @param object $entity The updated entity (not yet flushed)
      * @param array<string, mixed> $claims
