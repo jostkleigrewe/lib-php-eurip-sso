@@ -1,0 +1,105 @@
+{#
+ # DE: OIDC Session Management - Monitor Komponente
+ #     Einbinden in base.html.twig um SSO-Session-Aenderungen zu erkennen.
+ #
+ # EN: OIDC Session Management - Monitor Component
+ #     Include in base.html.twig to detect SSO session changes.
+ #
+ # @param interval  Polling-Intervall in Millisekunden (default: 5000)
+ # @param onChanged Callback-Funktion bei Session-Aenderung (default: reload)
+ #
+ # @example
+ # {% include '@EuripSso/components/SessionMonitor.html.twig' %}
+ #
+ # @example mit Custom-Handler
+ # {% include '@EuripSso/components/SessionMonitor.html.twig' with {
+ #     interval: 10000,
+ #     onChanged: 'window.location.href = "/logout"'
+ # } %}
+ #}
+{% if sso_supports_session_management() %}
+{% set config = sso_session_management_config(interval|default(5000)) %}
+<iframe id="eurip-sso-session-iframe"
+        src="{{ config.checkSessionIframe }}"
+        style="display:none;width:0;height:0;border:0;"
+        title="SSO Session Monitor"></iframe>
+<script>
+(function() {
+    'use strict';
+
+    var config = {
+        clientId: {{ config.clientId|json_encode|raw }},
+        sessionState: {{ config.sessionState|json_encode|raw }},
+        interval: {{ config.interval }},
+        onChanged: function() {
+            {{ onChanged|default('window.location.reload()')|raw }};
+        }
+    };
+
+    var iframe = document.getElementById('eurip-sso-session-iframe');
+    var timerId = null;
+    var lastState = 'unchanged';
+
+    function checkSession() {
+        if (!iframe || !iframe.contentWindow) {
+            return;
+        }
+
+        try {
+            // DE: postMessage an check_session_iframe senden
+            // EN: Send postMessage to check_session_iframe
+            var message = config.clientId + ' ' + config.sessionState;
+            iframe.contentWindow.postMessage(message, new URL(iframe.src).origin);
+        } catch (e) {
+            console.warn('[EuripSSO] Session check failed:', e);
+        }
+    }
+
+    function handleMessage(event) {
+        // DE: Nur Nachrichten vom check_session_iframe akzeptieren
+        // EN: Only accept messages from check_session_iframe
+        var iframeOrigin = new URL(iframe.src).origin;
+        if (event.origin !== iframeOrigin) {
+            return;
+        }
+
+        var data = event.data;
+
+        // DE: Moegliche Antworten: "changed", "unchanged", "error"
+        // EN: Possible responses: "changed", "unchanged", "error"
+        if (data === 'changed' && lastState !== 'changed') {
+            lastState = 'changed';
+            console.info('[EuripSSO] Session state changed - triggering callback');
+
+            // DE: Polling stoppen und Callback ausfuehren
+            // EN: Stop polling and execute callback
+            if (timerId) {
+                clearInterval(timerId);
+                timerId = null;
+            }
+
+            config.onChanged();
+        } else if (data === 'unchanged') {
+            lastState = 'unchanged';
+        } else if (data === 'error') {
+            console.warn('[EuripSSO] Session check returned error');
+        }
+    }
+
+    // DE: Event-Listener fuer postMessage Antworten
+    // EN: Event listener for postMessage responses
+    window.addEventListener('message', handleMessage, false);
+
+    // DE: Polling starten wenn iframe geladen ist
+    // EN: Start polling when iframe is loaded
+    iframe.addEventListener('load', function() {
+        // DE: Erste Pruefung nach kurzer Verzoegerung (iframe muss bereit sein)
+        // EN: First check after short delay (iframe must be ready)
+        setTimeout(function() {
+            checkSession();
+            timerId = setInterval(checkSession, config.interval);
+        }, 1000);
+    });
+})();
+</script>
+{% endif %}
