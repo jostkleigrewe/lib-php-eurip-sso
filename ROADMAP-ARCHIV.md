@@ -1,7 +1,75 @@
 # ROADMAP-ARCHIV: OIDC Auth Bundle
 
 > Archivierte erledigte Features und Implementierungsdetails.
-> Aktuelle Roadmap: [ROADMAP.md](ROADMAP.md)
+> **Status:** Projekt abgeschlossen (2026-02-14)
+
+---
+
+## Archiviert am: 2026-02-14 (Finale Phasen 1-4)
+
+### Phase 1: Bug-Fixes (Quick Wins) ✅
+
+- **1.1 Cache-Key im Warmup-Command fixen** — `OidcClientFactory::buildJwksCacheKey()` extrahiert
+- **1.2 TokenExchangeFailedException** — sprintf() statt String-Interpolation
+
+### Phase 2: Auth-Architektur + Bundle modernisieren ✅
+
+- **2.1** OidcAuthenticationException erstellt
+- **2.2** OidcAuthenticator modernisiert (delegiert an OidcAuthenticationService)
+- **2.3** AuthenticationController::callback() → LogicException-Fallback
+- **2.4** Bundle-Config vereinfacht (client_services.enabled, controller.enabled entfernt)
+- **2.5** Authenticator Service-Registrierung mit #[Autowire]
+- **2.6** Service-Registrierung modernisiert (Resource-Scanning, ~280 Zeilen statt 528)
+- **2.7** Authenticator-Config Parameter-Mapping auf routes.*
+
+### Phase 3: Code-Bereinigung ✅
+
+- **3.1** DoctrineOidcUserProvider entdupliziert (buildRoles(), wrapUser())
+- **3.2** Stille Catches → Logging
+- **3.3** getEntityId() robuster (Composite-Key-Warning)
+- **3.4** OidcConstants: Interface → final class, 9 EVENT_*-Constants entfernt
+- **3.5** Event-Dispatch modernisiert (klassen-basiert statt String)
+- **3.6** EuripSsoFacade entfernt, ID-Token-Verifikation aktiviert
+- **3.7** RouteLoader entfernt → #[Route]-Attribute
+
+### Phase 4: JWT-Extraktion + Tests ✅
+
+- **4.1** JwtVerifier extrahiert (Crypto-Code, JWKS Key-Rotation-Resilience)
+- **4.2** JwtVerifier-Tests mit echtem RSA-Key (15 Tests)
+
+---
+
+## Breaking Changes (Version nach Archivierung)
+
+### Konfiguration entfernt
+
+| Entfernt | Migration |
+|----------|-----------|
+| `controller.enabled` | Weg — Controller immer registriert |
+| `client_services.enabled` | Weg — Services immer registriert |
+| `authenticator.callback_route` | Weg — nutzt `routes.callback` |
+| `authenticator.login_path` | Weg — nutzt `routes.login` |
+| `authenticator.default_target_path` | Weg — nutzt `routes.after_login` |
+
+### Service-Aliase entfernt
+
+`eurip_sso.facade`, `eurip_sso.claims`, `eurip_sso.auth`, `eurip_sso.api`, `eurip_sso.token_storage` → direkte Type-Hints verwenden
+
+### EuripSsoFacade komplett entfernt
+
+Direkt `EuripSsoClaimsService`, `EuripSsoAuthorizationService`, `EuripSsoApiClient`, `EuripSsoTokenStorage` injecten.
+
+### OidcConstants: Interface → final class
+
+`implements OidcConstants` entfernen, Constants direkt referenzieren.
+
+### Event-Dispatch: String → Klassen-basiert
+
+`dispatch($event, OidcConstants::EVENT_*)` → `dispatch($event)`
+
+### OidcClient Constructor
+
+Neuer Parameter `JwtVerifier` — `OidcClientFactory` erledigt das automatisch.
 
 ---
 
