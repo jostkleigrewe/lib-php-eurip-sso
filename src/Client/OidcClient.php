@@ -496,7 +496,11 @@ final class OidcClient
             // DE: Code abgelaufen // EN: Code expired
             'expired_token' => $this->handleExpiredToken($description),
 
-            // DE: Unbekannter Fehler als expired behandeln // EN: Treat unknown error as expired
+            // DE: Ungültiger Grant - Device Code nicht erkannt oder grant_type nicht unterstützt
+            // EN: Invalid grant - device code not recognized or grant_type not supported
+            'invalid_grant' => $this->handleInvalidGrant($description),
+
+            // DE: Unbekannter Fehler // EN: Unknown error
             default => $this->handleUnknownError($error, $description),
         };
     }
@@ -581,13 +585,38 @@ final class OidcClient
         return DeviceCodePollResult::expired($description);
     }
 
+    private function handleInvalidGrant(?string $description): DeviceCodePollResult
+    {
+        // DE: invalid_grant kann bedeuten:
+        //     - Device Code wurde nicht gefunden
+        //     - Device Code wurde bereits verwendet
+        //     - grant_type wird nicht unterstützt
+        // EN: invalid_grant can mean:
+        //     - Device code was not found
+        //     - Device code was already used
+        //     - grant_type is not supported
+        $this->logger->error('Invalid grant error during device code polling', [
+            'error_description' => $description,
+            'hint' => 'Check if the SSO server supports device_code grant type',
+        ]);
+
+        return DeviceCodePollResult::error(
+            'invalid_grant',
+            $description ?? 'Invalid grant: The device code may be invalid, already used, or the grant type is not supported by the server.',
+        );
+    }
+
     private function handleUnknownError(string $error, ?string $description): DeviceCodePollResult
     {
         $this->logger->error('Unknown device token error', [
             'error' => $error,
             'error_description' => $description,
         ]);
-        return DeviceCodePollResult::expired($description ?? sprintf('Unknown error: %s', $error));
+
+        return DeviceCodePollResult::error(
+            $error,
+            $description ?? sprintf('Unknown error: %s', $error),
+        );
     }
 
     // =========================================================================

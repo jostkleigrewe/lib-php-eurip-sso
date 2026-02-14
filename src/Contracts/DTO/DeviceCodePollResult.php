@@ -21,6 +21,7 @@ final readonly class DeviceCodePollResult
     public const string STATUS_SUCCESS = 'success';
     public const string STATUS_ACCESS_DENIED = 'access_denied';
     public const string STATUS_EXPIRED = 'expired_token';
+    public const string STATUS_INVALID_GRANT = 'invalid_grant';
 
     public function __construct(
         /**
@@ -107,6 +108,18 @@ final readonly class DeviceCodePollResult
     }
 
     /**
+     * DE: Erstellt ein allgemeines Fehler-Ergebnis.
+     * EN: Creates a general error result.
+     */
+    public static function error(string $errorCode, ?string $description = null): self
+    {
+        return new self(
+            status: $errorCode,
+            errorDescription: $description,
+        );
+    }
+
+    /**
      * DE: Prüft ob Polling erfolgreich war.
      * EN: Checks if polling was successful.
      */
@@ -130,7 +143,11 @@ final readonly class DeviceCodePollResult
      */
     public function isError(): bool
     {
-        return $this->status === self::STATUS_ACCESS_DENIED || $this->status === self::STATUS_EXPIRED;
+        return !in_array($this->status, [
+            self::STATUS_SUCCESS,
+            self::STATUS_PENDING,
+            self::STATUS_SLOW_DOWN,
+        ], true);
     }
 
     /**

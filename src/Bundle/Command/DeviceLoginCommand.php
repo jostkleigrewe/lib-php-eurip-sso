@@ -113,6 +113,20 @@ final class DeviceLoginCommand extends Command
 
             $this->displayInstructions($io, $deviceCode);
 
+            // DE: Debug-Info bei Verbose-Output // EN: Debug info with verbose output
+            if ($output->isVerbose()) {
+                $io->section('Debug Information');
+                $io->table(
+                    ['Parameter', 'Value'],
+                    [
+                        ['Token Endpoint', $this->oidcClient->getConfig()->tokenEndpoint],
+                        ['Client ID', $this->oidcClient->getConfig()->clientId],
+                        ['Device Code', substr($deviceCode->deviceCode, 0, 20) . '...'],
+                        ['Grant Type', 'urn:ietf:params:oauth:grant-type:device_code'],
+                    ],
+                );
+            }
+
             // DE: Polling starten // EN: Start polling
             $tokenResponse = $this->oidcClient->awaitDeviceToken(
                 $deviceCode,
@@ -163,8 +177,21 @@ final class DeviceLoginCommand extends Command
                 $io->warning('Authorization was denied by the user.');
             } elseif ($e->error === 'expired_token') {
                 $io->warning('The device code has expired. Please try again.');
+            } elseif ($e->error === 'invalid_grant') {
+                $io->error('Invalid grant error.');
+                $io->listing([
+                    'The device code was not recognized by the server.',
+                    'Possible causes:',
+                    '  - The SSO server does not support device_code grant type',
+                    '  - The device code was already used or invalidated',
+                    '  - Client authentication failed',
+                ]);
+                $io->note('Check the SSO server logs for more details.');
             } else {
                 $io->error(sprintf('Token exchange failed: %s', $e->getMessage()));
+                if ($e->errorDescription !== null) {
+                    $io->note($e->errorDescription);
+                }
             }
 
             return Command::FAILURE;
