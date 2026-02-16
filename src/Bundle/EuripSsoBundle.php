@@ -22,6 +22,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
+use Symfony\Component\Routing\Loader\Configurator\RoutingConfigurator;
 
 /**
  * DE: Symfony Bundle für OIDC SSO Integration.
@@ -34,6 +35,16 @@ final class EuripSsoBundle extends AbstractBundle
     public function getPath(): string
     {
         return \dirname(__DIR__, 2);
+    }
+
+    /**
+     * DE: Lädt Bundle-Routen automatisch aus den Controllern mit #[Route]-Attributen.
+     * EN: Automatically loads bundle routes from controllers with #[Route] attributes.
+     */
+    public function loadRoutes(RoutingConfigurator $routes): void
+    {
+        $routes->import(__DIR__ . '/Controller/', 'attribute')
+            ->namePrefix('eurip_sso_');
     }
 
     public function configure(DefinitionConfigurator $definition): void
