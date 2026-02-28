@@ -22,6 +22,7 @@ final class JwtVerifier
 {
     private const SUPPORTED_ALGORITHM = 'RS256';
     private const DEFAULT_CACHE_TTL = 600; // DE: 10 Minuten // EN: 10 minutes
+    private const MAX_CACHE_TTL = 30 * 24 * 3600; // DE: 30 Tage Obergrenze // EN: 30 days upper bound
 
     private LoggerInterface $logger;
 
@@ -148,9 +149,22 @@ final class JwtVerifier
         if ($this->cache !== null && $this->cacheKey !== null) {
             /** @var array<string, mixed> */
             return $this->cache->get($this->cacheKey, function (ItemInterface $item): array {
-                $item->expiresAfter($this->cacheTtl);
+                [$jwks, $providerTtl] = $this->fetchJwksWithTtl();
 
-                return $this->doFetchJwks();
+                // DE: TTL-Priorität: Provider-Header > konfigurierte TTL, mit Obergrenze
+                // EN: TTL priority: provider header > configured TTL, with upper bound
+                $ttl = $providerTtl !== null
+                    ? min($providerTtl, self::MAX_CACHE_TTL)
+                    : $this->cacheTtl;
+
+                $item->expiresAfter($ttl);
+
+                $this->logger->debug('JWKS cache TTL set', [
+                    'ttl' => $ttl,
+                    'source' => $providerTtl !== null ? 'provider' : 'config',
+                ]);
+
+                return $jwks;
             });
         }
 
@@ -168,6 +182,20 @@ final class JwtVerifier
      */
     private function doFetchJwks(): array
     {
+        [$jwks] = $this->fetchJwksWithTtl();
+
+        return $jwks;
+    }
+
+    /**
+     * DE: Führt den HTTP-Request für JWKS durch und extrahiert die TTL aus Provider-Headern.
+     * EN: Performs the HTTP request for JWKS and extracts TTL from provider headers.
+     *
+     * @return array{0: array<string, mixed>, 1: int|null}
+     * @throws OidcProtocolException
+     */
+    private function fetchJwksWithTtl(): array
+    {
         $this->logger->debug('Fetching JWKS from IdP', ['uri' => $this->jwksUri]);
 
         $request = $this->requestFactory->createRequest('GET', $this->jwksUri)
@@ -179,6 +207,10 @@ final class JwtVerifier
             throw new OidcProtocolException(sprintf('JWKS request failed: %d', $response->getStatusCode()));
         }
 
+        // DE: Cache-TTL aus Provider-Headern extrahieren (inspiriert von Symfony 7.4 OidcTokenHandler)
+        // EN: Extract cache TTL from provider headers (inspired by Symfony 7.4 OidcTokenHandler)
+        $providerTtl = $this->extractTtlFromHeaders($response);
+
         $data = json_decode((string) $response->getBody(), true);
 
         if (!is_array($data) || !isset($data['keys'])) {
@@ -187,7 +219,39 @@ final class JwtVerifier
 
         $this->logger->info('JWKS fetched successfully', ['keys_count' => count($data['keys'])]);
 
-        return $data;
+        return [$data, $providerTtl];
+    }
+
+    /**
+     * DE: Extrahiert Cache-TTL aus HTTP-Response-Headern (Cache-Control: max-age oder Expires).
+     * EN: Extracts cache TTL from HTTP response headers (Cache-Control: max-age or Expires).
+     */
+    private function extractTtlFromHeaders(\Psr\Http\Message\ResponseInterface $response): ?int
+    {
+        // DE: Priorität 1: Cache-Control: max-age=N
+        // EN: Priority 1: Cache-Control: max-age=N
+        $cacheControl = $response->getHeaderLine('Cache-Control');
+        if ($cacheControl !== '' && preg_match('/max-age=(\d+)/', $cacheControl, $matches)) {
+            $maxAge = (int) $matches[1];
+            if ($maxAge > 0) {
+                return $maxAge;
+            }
+        }
+
+        // DE: Priorität 2: Expires Header als Fallback
+        // EN: Priority 2: Expires header as fallback
+        $expires = $response->getHeaderLine('Expires');
+        if ($expires !== '') {
+            $expiresTimestamp = strtotime($expires);
+            if ($expiresTimestamp !== false) {
+                $ttl = $expiresTimestamp - time();
+                if ($ttl > 0) {
+                    return $ttl;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
