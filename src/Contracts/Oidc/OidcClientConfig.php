@@ -107,6 +107,16 @@ final class OidcClientConfig
          * @see https://openid.net/specs/openid-connect-session-1_0.html
          */
         public readonly ?string $checkSessionIframe = null,
+
+        /**
+         * DE: Resource URI (RFC 8707 Resource Indicator).
+         *     Wird in Authorization-, Token- und Refresh-Requests mitgesendet.
+         * EN: Resource URI (RFC 8707 resource indicator).
+         *     Sent in authorization, token, and refresh requests.
+         *
+         * @see https://datatracker.ietf.org/doc/html/rfc8707
+         */
+        public readonly ?string $resource = null,
     ) {
         // DE: Pflichtfelder validieren // EN: Validate required fields
         self::validateUrl($issuer, 'issuer');

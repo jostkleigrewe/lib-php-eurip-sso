@@ -79,6 +79,13 @@ final class EuripSsoBundle extends AbstractBundle
                     ->defaultValue(['openid', 'profile', 'email'])
                 ->end()
 
+                // DE: RFC 8707 Resource Indicator
+                // EN: RFC 8707 resource indicator
+                ->scalarNode('resource')
+                    ->defaultNull()
+                    ->info('Resource URI for RFC 8707 (e.g., https://api.eurip.com)')
+                ->end()
+
                 // Security
                 ->booleanNode('require_https')
                     ->defaultTrue()
@@ -192,6 +199,7 @@ final class EuripSsoBundle extends AbstractBundle
             ->set('eurip_sso.redirect_uri', $config['redirect_uri'])
             ->set('eurip_sso.public_issuer', $config['public_issuer'])
             ->set('eurip_sso.scopes', $config['scopes'])
+            ->set('eurip_sso.resource', $config['resource'])
             ->set('eurip_sso.require_https', $config['require_https'])
             ->set('eurip_sso.cache.enabled', $config['cache']['enabled'])
             ->set('eurip_sso.cache.ttl', $config['cache']['ttl'])
@@ -270,6 +278,7 @@ final class EuripSsoBundle extends AbstractBundle
             '$cacheTtl' => $config['cache']['ttl'],
             '$logger' => new Reference('logger', $builder::NULL_ON_INVALID_REFERENCE),
             '$requireHttps' => $config['require_https'],
+            '$resource' => $config['resource'],
         ];
 
         $container->services()

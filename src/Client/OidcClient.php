@@ -83,6 +83,12 @@ final class OidcClient
             'code_challenge_method' => 'S256',
         ];
 
+        // DE: RFC 8707 Resource Indicator (optional).
+        // EN: RFC 8707 resource indicator (optional).
+        if ($this->config->resource !== null) {
+            $params['resource'] = $this->config->resource;
+        }
+
         $url = $this->config->authorizationEndpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 
         $this->logger->debug('Built authorization URL', [
@@ -122,6 +128,12 @@ final class OidcClient
             'code_challenge' => $codeChallenge,
             'code_challenge_method' => 'S256',
         ];
+
+        // DE: RFC 8707 Resource Indicator (optional).
+        // EN: RFC 8707 resource indicator (optional).
+        if ($this->config->resource !== null) {
+            $params['resource'] = $this->config->resource;
+        }
 
         $url = $this->config->authorizationEndpoint . '?' . http_build_query($params, '', '&', PHP_QUERY_RFC3986);
 
@@ -194,6 +206,12 @@ final class OidcClient
             $params['client_secret'] = $this->config->clientSecret;
         }
 
+        // DE: RFC 8707 Resource Indicator (optional).
+        // EN: RFC 8707 resource indicator (optional).
+        if ($this->config->resource !== null) {
+            $params['resource'] = $this->config->resource;
+        }
+
         $response = $this->postForm($this->config->tokenEndpoint, $params);
 
         if (!isset($response['access_token'])) {
@@ -231,6 +249,12 @@ final class OidcClient
 
         if ($this->config->clientSecret !== null) {
             $params['client_secret'] = $this->config->clientSecret;
+        }
+
+        // DE: RFC 8707 Resource Indicator (optional).
+        // EN: RFC 8707 resource indicator (optional).
+        if ($this->config->resource !== null) {
+            $params['resource'] = $this->config->resource;
         }
 
         $response = $this->postForm($this->config->tokenEndpoint, $params);
@@ -630,6 +654,12 @@ final class OidcClient
 
         if ($scopes !== []) {
             $params['scope'] = implode(' ', $scopes);
+        }
+
+        // DE: RFC 8707 Resource Indicator (optional).
+        // EN: RFC 8707 resource indicator (optional).
+        if ($this->config->resource !== null) {
+            $params['resource'] = $this->config->resource;
         }
 
         $response = $this->postForm($this->config->tokenEndpoint, $params);

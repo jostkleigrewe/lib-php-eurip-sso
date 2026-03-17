@@ -48,6 +48,7 @@ final class OidcClientFactory
         int $cacheTtl = self::CACHE_TTL,
         ?LoggerInterface $logger = null,
         bool $requireHttps = true,
+        ?string $resource = null,
     ): OidcClient {
         $config = self::fetchConfig(
             issuer: $issuer,
@@ -61,6 +62,7 @@ final class OidcClientFactory
             cacheTtl: $cacheTtl,
             logger: $logger,
             requireHttps: $requireHttps,
+            resource: $resource,
         );
 
         // DE: JwtVerifier mit Cache erzeugen (für JWT-Signatur-Validierung via JWKS)
@@ -122,9 +124,10 @@ final class OidcClientFactory
         int $cacheTtl,
         ?LoggerInterface $logger,
         bool $requireHttps,
+        ?string $resource = null,
     ): OidcClientConfig {
-        $fetchDiscovery = static function () use ($issuer, $clientId, $redirectUri, $clientSecret, $publicIssuer, $httpClient, $requestFactory, $logger, $requireHttps): OidcClientConfig {
-            return self::fetchDiscovery($issuer, $clientId, $redirectUri, $clientSecret, $publicIssuer, $httpClient, $requestFactory, $logger, $requireHttps);
+        $fetchDiscovery = static function () use ($issuer, $clientId, $redirectUri, $clientSecret, $publicIssuer, $httpClient, $requestFactory, $logger, $requireHttps, $resource): OidcClientConfig {
+            return self::fetchDiscovery($issuer, $clientId, $redirectUri, $clientSecret, $publicIssuer, $httpClient, $requestFactory, $logger, $requireHttps, $resource);
         };
 
         if ($cache === null) {
@@ -184,6 +187,7 @@ final class OidcClientFactory
         RequestFactoryInterface $requestFactory,
         ?LoggerInterface $logger,
         bool $requireHttps,
+        ?string $resource = null,
     ): OidcClientConfig {
         // DE: HTTPS-Validierung für Issuer // EN: HTTPS validation for issuer
         if (!self::isSecureUrl($issuer)) {
@@ -315,6 +319,7 @@ final class OidcClientFactory
             introspectionEndpoint: $introspectionEndpoint,
             deviceAuthorizationEndpoint: $deviceAuthorizationEndpoint,
             checkSessionIframe: $checkSessionIframe,
+            resource: $resource,
         );
     }
 

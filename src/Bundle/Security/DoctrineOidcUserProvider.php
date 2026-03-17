@@ -257,10 +257,14 @@ final class DoctrineOidcUserProvider implements OidcUserProviderInterface, UserP
 
     private function getEntityId(object $entity): int|string
     {
-        // DE: Bevorzugt getId() — Standard bei Doctrine Entities
-        // EN: Prefer getId() — standard for Doctrine entities
+        // DE: Bevorzugt getId() — Standard bei Doctrine Entities.
+        //     Stringable IDs (z.B. UuidV7) werden automatisch konvertiert.
+        // EN: Prefer getId() — standard for Doctrine entities.
+        //     Stringable IDs (e.g. UuidV7) are automatically converted.
         if (method_exists($entity, 'getId')) {
-            return $entity->getId();
+            $id = $entity->getId();
+
+            return $id instanceof \Stringable ? (string) $id : $id;
         }
 
         // DE: Fallback über Doctrine Metadata
@@ -293,7 +297,7 @@ final class DoctrineOidcUserProvider implements OidcUserProviderInterface, UserP
             return 0;
         }
 
-        return $firstValue;
+        return $firstValue instanceof \Stringable ? (string) $firstValue : $firstValue;
     }
 
     /**
